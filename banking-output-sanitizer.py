@@ -1,6 +1,7 @@
 import pandas as pd
 import sys
 from collections import defaultdict
+import duckdb
 
 def get_user_choice(unique_categories):
     while True:
@@ -110,6 +111,23 @@ def process_csv(input_file):
 
     try:
         df.to_csv('finance-2024.csv', index=False)
+
+	# Connect to a persistent database
+	#conn = duckdb.connect('finance-2024.db')
+
+	# Transaction Date,Description,Category,Type,Amount,Memo
+	# Create table if it does not exist
+	#conn.execute("CREATE TABLE IF NOT EXISTS transactions ('Transaction Date' DATE, Description VARCHAR, Category VARCHAR, Type VARCHAR, Amount DOUBLE, Memo VARCHAR)")
+
+	# Insert data only if the combination of id and name does not exist
+	#conn.execute(f"""
+	#	INSERT INTO transactions ('Transaction Date',Description,Category,Type,Amount,Memo)
+	#	SELECT {new_id}, '{new_name}'
+	#	WHERE NOT EXISTS (
+	#	    SELECT 1 FROM my_table WHERE id = {new_id} AND name = '{new_name}'
+	#	)
+	#""")	
+
         print("Processing complete. Output saved to finance-2024.csv")
     except PermissionError:
         print("Error: Permission denied when trying to save the file. Make sure you have write access to the current directory.")
