@@ -14,6 +14,8 @@ def process_csv(input_file):
 
     # Pre-filtering step: Remove rows where 'Description' contains 'CHASE CREDIT'
     df = df[~df['Description'].str.contains('CHASE CREDIT', case=False, na=False)]
+    # Remove rows where 'Type' is 'TRANSFER'
+    df = df[df['Type'] != 'TRANSFER']
 
     print("\nData shape after filtering:")
     print(df.shape)
@@ -36,9 +38,21 @@ def process_csv(input_file):
     df['Memo'] = ''
     df['Transaction Date'] = df['Date']
 
-    # Calculated field: Mark 'Transportation' in 'Category' column
-    transportation_mask = df['Description'].str.contains('E-ZPASS|NYC FINANCE PARKING', case=False, na=False)
-    df.loc[transportation_mask, 'Category'] = 'Transportation'
+    # Category mapping
+    category_map = {
+        'E-ZPASS': 'Transportation',
+        'NYC FINANCE PARKING': 'Transportation',
+        'GRUBHUB HOLDING': 'Salary',
+        'NYCSHININGSMILES NYCSHINING': 'Kids',
+        'WEB PMTS': 'Monthly property expense',
+        'MORTGAGE': 'Monthly mortgage expense',
+        'NAJERA-ESTEBAN': 'Kids'
+    }
+
+    # Apply category mapping
+    for key, value in category_map.items():
+        mask = df['Description'].str.contains(key, case=False, na=False)
+        df.loc[mask, 'Category'] = value
 
     # Add 'Card' column with static value 'Schwab'
     df['Card'] = 'Schwab'
@@ -59,10 +73,11 @@ def process_csv(input_file):
     print("\nFirst few rows of final data:")
     print(df.head())
 
-    # Print some statistics about the 'Transportation' category
-    transport_count = df['Category'].eq('Transportation').sum()
-    print(f"\nNumber of transactions marked as 'Transportation': {transport_count}")
-    print(f"Percentage of transactions marked as 'Transportation': {transport_count / len(df) * 100:.2f}%")
+    # Print some statistics about the categories
+    for category in set(category_map.values()):
+        category_count = df['Category'].eq(category).sum()
+        print(f"\nNumber of transactions marked as '{category}': {category_count}")
+        print(f"Percentage of transactions marked as '{category}': {category_count / len(df) * 100:.2f}%")
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
