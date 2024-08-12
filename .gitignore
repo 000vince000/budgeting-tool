@@ -1,3 +1,5 @@
 cache/
 exports/
 .DS_Store
+*.csv
+*.sav
