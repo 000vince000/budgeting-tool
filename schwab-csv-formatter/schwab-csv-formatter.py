@@ -31,13 +31,14 @@ def process_csv(input_file):
     df['Deposit'] = df['Deposit'].apply(currency_to_float)
 
     # Perform column operations
-    df['Blank1'] = ''
-    df['Blank2'] = ''
-    df['Combined'] = df['Deposit'] - df['Withdrawal']
+    df['Category'] = ''
+    df['Amount'] = df['Deposit'] - df['Withdrawal']
+    df['Memo'] = ''
+    df['Transaction Date'] = df['Date']
 
-    # Calculated field: Mark 'Transportation' in 'Blank2' column
+    # Calculated field: Mark 'Transportation' in 'Category' column
     transportation_mask = df['Description'].str.contains('E-ZPASS|NYC FINANCE PARKING', case=False, na=False)
-    df.loc[transportation_mask, 'Blank2'] = 'Transportation'
+    df.loc[transportation_mask, 'Category'] = 'Transportation'
 
     # Add 'Card' column with static value 'Schwab'
     df['Card'] = 'Schwab'
@@ -46,7 +47,7 @@ def process_csv(input_file):
     print(df.head())
 
     # Reorder columns, putting 'Card' as the left-most column
-    df = df[['Card', 'Date', 'Blank1', 'Description', 'Blank2', 'Type', 'Combined']]
+    df = df[['Card', 'Transaction Date', 'Description', 'Category', 'Type', 'Amount', 'Memo']]
     
     # Generate output filename
     output_file = f"{os.path.splitext(input_file)[0]}-processed.csv"
@@ -59,7 +60,7 @@ def process_csv(input_file):
     print(df.head())
 
     # Print some statistics about the 'Transportation' category
-    transport_count = df['Blank2'].eq('Transportation').sum()
+    transport_count = df['Category'].eq('Transportation').sum()
     print(f"\nNumber of transactions marked as 'Transportation': {transport_count}")
     print(f"Percentage of transactions marked as 'Transportation': {transport_count / len(df) * 100:.2f}%")
 
