@@ -2,6 +2,35 @@ import pandas as pd
 import sys
 import os
 
+def get_user_choice(description, unique_categories, user_choices):
+    if description in user_choices:
+        return user_choices[description]
+
+    print(f"\nTransaction: {description}")
+    print("Choose a category or enter a new one:")
+    for i, cat in enumerate(unique_categories, 1):
+        print(f"{i}. {cat}")
+    print(f"{len(unique_categories) + 1}. Enter a new category")
+    print(f"{len(unique_categories) + 2}. Exclude this transaction")
+    
+    while True:
+        try:
+            choice = int(input("Enter the number of your choice: "))
+            if 1 <= choice <= len(unique_categories):
+                user_choices[description] = unique_categories[choice - 1]
+                return unique_categories[choice - 1]
+            elif choice == len(unique_categories) + 1:
+                new_category = input("Enter the new category: ")
+                user_choices[description] = new_category
+                return new_category
+            elif choice == len(unique_categories) + 2:
+                user_choices[description] = "EXCLUDE"
+                return "EXCLUDE"
+            else:
+                print("Invalid choice. Please try again.")
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
 def process_csv(input_file):
     # Read only the necessary columns from the CSV file
     usecols = ['Date', 'Description', 'Type', 'Withdrawal', 'Deposit']
@@ -42,17 +71,39 @@ def process_csv(input_file):
     category_map = {
         'E-ZPASS': 'Transportation',
         'NYC FINANCE PARKING': 'Transportation',
+        'CHARLIE CHEN': 'Transportation',
         'GRUBHUB HOLDING': 'Salary',
         'NYCSHININGSMILES NYCSHINING': 'Kids',
+        'NAJERA-ESTEBAN': 'Kids',
         'WEB PMTS': 'Monthly property expense',
         'MORTGAGE': 'Monthly mortgage expense',
-        'NAJERA-ESTEBAN': 'Kids'
+        'JESSE D VANDENBERGH': 'Rental income',
+        'Deposit Mobile Banking': 'Health & Wellness'
     }
 
-    # Apply category mapping
-    for key, value in category_map.items():
-        mask = df['Description'].str.contains(key, case=False, na=False)
-        df.loc[mask, 'Category'] = value
+    # Apply category mapping and prompt user for unmatched categories
+    unique_categories = sorted(set(category_map.values()))
+    rows_to_drop = []
+    user_choices = {}
+
+    for index, row in df.iterrows():
+        description = row['Description']
+        matched = False
+        for key, value in category_map.items():
+            if key.lower() in description.lower():
+                df.at[index, 'Category'] = value
+                matched = True
+                break
+        
+        if not matched:
+            user_choice = get_user_choice(description, unique_categories, user_choices)
+            if user_choice == "EXCLUDE":
+                rows_to_drop.append(index)
+            else:
+                df.at[index, 'Category'] = user_choice
+
+    # Remove excluded rows
+    df = df.drop(rows_to_drop)
 
     # Add 'Card' column with static value 'Schwab'
     df['Card'] = 'Schwab'
@@ -74,10 +125,15 @@ def process_csv(input_file):
     print(df.head())
 
     # Print some statistics about the categories
-    for category in set(category_map.values()):
+    for category in set(df['Category'].unique()):
         category_count = df['Category'].eq(category).sum()
         print(f"\nNumber of transactions marked as '{category}': {category_count}")
         print(f"Percentage of transactions marked as '{category}': {category_count / len(df) * 100:.2f}%")
+
+    # Print memorized user choices
+    print("\nMemorized user choices:")
+    for desc, cat in user_choices.items():
+        print(f"'{desc}' -> '{cat}'")
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
