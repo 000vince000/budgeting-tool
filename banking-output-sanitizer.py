@@ -1,7 +1,7 @@
 import pandas as pd
 import sys
+import os
 from collections import defaultdict
-import duckdb
 import concurrent.futures
 import threading
 
@@ -29,23 +29,13 @@ def get_user_choice(unique_categories, input_file, description, current_category
 def process_csv(input_file, global_categories):
     try:
         df = pd.read_csv(input_file)
-    except FileNotFoundError:
-        print(f"Error: File '{input_file}' not found.")
-        return None
-    except pd.errors.EmptyDataError:
-        print(f"Error: File '{input_file}' is empty.")
-        return None
-    except pd.errors.ParserError:
-        print(f"Error: Unable to parse '{input_file}'. Make sure it's a valid CSV file.")
+    except Exception as e:
+        print(f"Error reading file '{input_file}': {e}")
         return None
 
-    # remove payment debit
     df = df[df['Description'] != "AUTOMATIC PAYMENT - THANK"]
-
-    if 'Post Date' in df.columns:
-        df = df.drop(columns=['Post Date'])
-    else:
-        print(f"Warning: 'Post Date' column not found in '{input_file}'. Proceeding without removing it.")
+    df['Card'] = os.path.basename(input_file).split('_')[0]
+    df['Memo'] = df.get('Memo', '').fillna('')
 
     category_map = {
         "Netflix.com": "Entertainment",
@@ -75,46 +65,24 @@ def process_csv(input_file, global_categories):
         "CLAUDE.AI SUBSCRIPTION": "Vince spending"
     }
 
-    additional_category_map = {
-        "Bills & Utilities": "Monthly fixed cost"
-    }
-
-    df['Description'] = df['Description'].str.strip()
-    
-    # First mapping based on Description
     for key, value in category_map.items():
-        df.loc[df['Description'].str.contains(key, case=False, na=False), 'Category'] = value
+        mask = df['Description'].str.contains(key, case=False, na=False)
+        df.loc[mask, 'Category'] = value
+        df.loc[mask, 'Memo'] += ' Category replaced via script'
 
-    # Second mapping based on Category
-    for key, value in additional_category_map.items():
-        df.loc[df['Category'].str.contains(key, case=False, na=False), 'Category'] = value
-    
-    prompt_count = defaultdict(int)
-    
     for index, row in df.iterrows():
-        if row['Category'] in ["Professional Services", "Personal"]:
-            description = row['Description']
-            
-            # Check if this description has already been categorized
-            category = next((v for k, v in category_map.items() if k in description), None)
-            
+        if pd.isna(row['Category']) or row['Category'] in ["Professional Services", "Personal", ""]:
+            category = next((v for k, v in category_map.items() if k.lower() in row['Description'].lower()), None)
             if category is None:
-                new_category = get_user_choice(global_categories, input_file, description, row['Category'])
-                df.at[index, 'Category'] = new_category
-                
-                prompt_count[description] += 1
-                
-                # If this description has been prompted more than twice, add it to category_map
-                if prompt_count[description] > 1:
-                    key = description.split()[0]  # Use the first word of the description as the key
-                    category_map[key] = new_category
-                    print(f"Memorized: {key} -> {new_category}")
+                category = get_user_choice(global_categories, input_file, row['Description'], row['Category'])
+                df.at[index, 'Memo'] += ' Category replaced by user via script'
             else:
-                df.at[index, 'Category'] = category
+                df.at[index, 'Memo'] += ' Category replaced by memory via script'
+            df.at[index, 'Category'] = category
 
-    return df
+    return df[['Card', 'Transaction Date', 'Description', 'Category', 'Type', 'Amount', 'Memo']]
+
 def process_files_parallel(input_files):
-    # Predefined categories
     predefined_categories = [
         "Groceries", "Food & Drink", "Travel", "Drink", "Shopping",
         "Automotive", "Health & Wellness", "Monthly fixed cost",
@@ -123,55 +91,32 @@ def process_files_parallel(input_files):
         "Kids", "Gifts & Donations"
     ]
 
-    # Get all unique categories from all files
-    all_categories = set(predefined_categories)
-    for file in input_files:
-        try:
-            df = pd.read_csv(file)
-            all_categories.update(df['Category'].dropna().astype(str).unique())
-        except Exception as e:
-            print(f"Error reading categories from {file}: {e}")
-
-    global_categories = sorted([str(cat) for cat in all_categories if str(cat) not in ["Professional Services", "Personal", "nan"]])
-
-    processed_dfs = []
     with concurrent.futures.ThreadPoolExecutor() as executor:
-        future_to_file = {executor.submit(process_csv, file, global_categories): file for file in input_files}
-        for future in concurrent.futures.as_completed(future_to_file):
-            file = future_to_file[future]
-            try:
-                df = future.result()
-                if df is not None and not df.empty:
-                    processed_dfs.append(df)
-                else:
-                    print(f"Warning: No valid data processed from '{file}'.")
-            except Exception as exc:
-                print(f"Error processing '{file}': {exc}")
+        processed_dfs = list(executor.map(lambda f: process_csv(f, predefined_categories), input_files))
     
-    if not processed_dfs:
-        print("Error: No valid data processed from any input files.")
-        return None
-    
-    return pd.concat(processed_dfs, ignore_index=True)
+    # Filter out None values and empty DataFrames
+    processed_dfs = [df for df in processed_dfs if df is not None and not df.empty]
+
+    return pd.concat(processed_dfs, ignore_index=True) if processed_dfs else None
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python script.py <input_csv_file1> [<input_csv_file2> ...]")
         sys.exit(1)
-    
-    input_files = sys.argv[1:]
-    
-    # Process all input files in parallel
-    combined_df = process_files_parallel(input_files)
+
+    combined_df = process_files_parallel(sys.argv[1:])
 
     if combined_df is not None and not combined_df.empty:
         try:
             output_file = 'finance-2024-combined.csv'
             combined_df.to_csv(output_file, index=False)
             print(f"Processing complete. Output saved to {output_file}")
-        except PermissionError:
-            print("Error: Permission denied when trying to save the file. Make sure you have write access to the current directory.")
+
+            for category in combined_df['Category'].unique():
+                if pd.notna(category):
+                    category_count = combined_df['Category'].eq(category).sum()
+                    print(f"\nTransactions marked as '{category}': {category_count} ({category_count / len(combined_df) * 100:.2f}%)")
         except Exception as e:
-            print(f"An unexpected error occurred while saving the file: {str(e)}")
+            print(f"An error occurred while saving the file: {str(e)}")
     else:
         print("Error: No data to save. Please check your input files and try again.")
