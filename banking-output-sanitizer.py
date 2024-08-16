@@ -49,28 +49,38 @@ def get_category(description, category_map, unique_categories, user_choices):
     with input_lock:
         print(f"\nTransaction: {description}")
         print("Choose a category or enter a new one:")
-        for i, cat in enumerate(unique_categories, 1):
+        
+        # Sort categories alphabetically, excluding "EXCLUDE"
+        sorted_categories = sorted([cat for cat in unique_categories if cat != "EXCLUDE"])
+        
+        # Add "EXCLUDE" option at the end
+        sorted_categories.append("EXCLUDE")
+        
+        for i, cat in enumerate(sorted_categories, 1):
             print(f"{i}. {cat}")
-        print(f"{len(unique_categories) + 1}. Enter a new category")
-        print(f"{len(unique_categories) + 2}. Exclude this transaction")
+        print(f"{len(sorted_categories) + 1}. Enter a new category")
         
         while True:
             try:
                 choice = int(input("Enter the number of your choice: "))
-                if 1 <= choice <= len(unique_categories):
-                    user_choices[description] = unique_categories[choice - 1]
-                    return unique_categories[choice - 1], True  # True indicates user intervention
-                elif choice == len(unique_categories) + 1:
+                if 1 <= choice <= len(sorted_categories):
+                    selected_category = sorted_categories[choice - 1]
+                    user_choices[description] = selected_category
+                    return selected_category, True  # True indicates user intervention
+                elif choice == len(sorted_categories) + 1:
                     new_category = input("Enter the new category: ")
                     user_choices[description] = new_category
                     return new_category, True  # True indicates user intervention
-                elif choice == len(unique_categories) + 2:
-                    user_choices[description] = "EXCLUDE"
-                    return "EXCLUDE", True  # True indicates user intervention
                 else:
                     print("Invalid choice. Please try again.")
             except ValueError:
                 print("Invalid input. Please enter a number.")
+
+def apply_category_mapping(description, category_map):
+    for key, value in category_map.items():
+        if key.lower() in description.lower():
+            return value
+    return None
 
 def process_chase_csv(input_file, global_categories, user_choices):
     try:
@@ -92,7 +102,7 @@ def process_chase_csv(input_file, global_categories, user_choices):
         "Spotify USA": "Monthly fixed cost",
         "NEW YORK MAGAZINE": "Kat spending",
         "USAA INSURANCE PAYMENT": "Monthly fixed cost",
-        "LYFT ": "Transportation",
+        "LYFT": "Transportation",
         "AMZN Mktp": "Shopping",
         "COFFEE": "Drink",
         "CAFE": "Drink",
@@ -114,12 +124,13 @@ def process_chase_csv(input_file, global_categories, user_choices):
     rows_to_drop = []
 
     for index, row in df.iterrows():
-        if pd.isna(row['Category']) or row['Category'] in ["Professional Services", "Personal", ""]:
-            category = next((v for k, v in category_map.items() if k.lower() in row['Description'].lower()), None)
-            if category is None:
-                category, user_intervened = get_category(row['Description'], category_map, global_categories, user_choices)
-            else:
-                user_intervened = False
+        mapped_category = apply_category_mapping(row['Description'], category_map)
+        
+        if mapped_category:
+            df.at[index, 'Category'] = mapped_category
+            df.at[index, 'Memo'] += ' Category assigned automatically via script'
+        elif pd.isna(row['Category']) or row['Category'] in ["Professional Services", "Personal", ""]:
+            category, user_intervened = get_category(row['Description'], category_map, global_categories, user_choices)
             if category == "EXCLUDE":
                 rows_to_drop.append(index)
             else:
@@ -167,15 +178,21 @@ def process_schwab_csv(input_file, global_categories, user_choices):
     rows_to_drop = []
 
     for index, row in df.iterrows():
-        category, user_intervened = get_category(row['Description'], category_map, global_categories, user_choices)
-        if category == "EXCLUDE":
-            rows_to_drop.append(index)
+        mapped_category = apply_category_mapping(row['Description'], category_map)
+        
+        if mapped_category:
+            df.at[index, 'Category'] = mapped_category
+            df.at[index, 'Memo'] += ' Category assigned automatically via script'
         else:
-            df.at[index, 'Category'] = category
-            if user_intervened:
-                df.at[index, 'Memo'] += ' Category assigned by user via script'
+            category, user_intervened = get_category(row['Description'], category_map, global_categories, user_choices)
+            if category == "EXCLUDE":
+                rows_to_drop.append(index)
             else:
-                df.at[index, 'Memo'] += ' Category assigned automatically via script'
+                df.at[index, 'Category'] = category
+                if user_intervened:
+                    df.at[index, 'Memo'] += ' Category assigned by user via script'
+                else:
+                    df.at[index, 'Memo'] += ' Category assigned automatically via script'
 
     df = df.drop(rows_to_drop)
     df['Card'] = 'Schwab'
