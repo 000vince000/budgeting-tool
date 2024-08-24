@@ -3,3 +3,6 @@ exports/
 .DS_Store
 *.csv
 *.sav
+*.db
+*.swp
+*.swo
