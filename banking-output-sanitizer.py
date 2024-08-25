@@ -94,7 +94,7 @@ def process_chase_csv(input_file, global_categories, user_choices):
     df['Memo'] = df.get('Memo', '').fillna('')
 
     category_map = {
-        "Netflix.com": "Entertainment",
+        "Netflix": "Entertainment",
         "CUBESMART": "Monthly fixed cost",
         "Patreon": "Vince spending",
         "NYTimes": "Kat spending",
@@ -118,7 +118,13 @@ def process_chase_csv(input_file, global_categories, user_choices):
         "CIAO GLORIA": "Drink",
         "MTA*NYCT PAYGO": "Transportation",
         "CITIBIK": "Transportation",
-        "CLAUDE.AI SUBSCRIPTION": "Vince spending"
+        "CLAUDE.AI SUBSCRIPTION": "Vince spending",
+        "ROGERS": "Monthly fixed cost",
+        "CONDO INS": "Monthly fixed cost",
+        "GEICO": "Monthly fixed cost",
+        "GOOGLE *FI": "Monthly fixed cost",
+        "BLUE CROSS": "Health & Wellness",
+        "ALOHI": "Monthly fixed cost"
     }
 
     rows_to_drop = []

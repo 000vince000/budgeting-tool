@@ -2,7 +2,7 @@ import duckdb
 import pandas as pd
 from datetime import datetime
 
-def debug_create_and_insert(db_name, table_name, csv_file):
+def create_and_insert(db_name, table_name, csv_file):
     conn = duckdb.connect(db_name)
     
     # Quote the table name to handle special characters and numbers
@@ -17,10 +17,17 @@ def debug_create_and_insert(db_name, table_name, csv_file):
         # Convert 'Transaction Date' to datetime
         df['Transaction Date'] = pd.to_datetime(df['Transaction Date'], format='%m/%d/%Y')
 
+        # Step 1.5: Create autoincrementing sequence
+        create_seq_query = f"""
+            CREATE SEQUENCE consolidated_transactions_id_seq START 1;
+        """
+        conn.execute(create_seq_query)
+
         # Step 2: Create table
         print("\nStep 2: Creating table")
         create_table_query = f"""
         CREATE TABLE IF NOT EXISTS {quoted_table_name} (
+            id BIGINT DEFAULT nextval('consolidated_transactions_id_seq') PRIMARY KEY,
             "Card" VARCHAR,
             "Transaction Date" DATE,
             "Description" VARCHAR,
@@ -28,7 +35,7 @@ def debug_create_and_insert(db_name, table_name, csv_file):
             "Type" VARCHAR,
             "Amount" DECIMAL(10, 2),
             "Memo" VARCHAR,
-            PRIMARY KEY ("Card", "Transaction Date", "Description", "Amount")
+            UNIQUE ("Card", "Transaction Date", "Description", "Amount")
         )
         """
         print(f"Create table query:\n{create_table_query}")
@@ -50,10 +57,11 @@ def debug_create_and_insert(db_name, table_name, csv_file):
         print("\nStep 4: Inserting data")
         inserted_count = 0
         error_count = 0
+        imploded_col_names = ', '.join(f'"{col}"' for col in df.columns.to_list())
 
         for index, row in df.iterrows():
             insert_query = f"""
-            INSERT INTO {quoted_table_name} VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO {quoted_table_name} ({imploded_col_names}) VALUES (?, ?, ?, ?, ?, ?, ?)
             """
             try:
                 conn.execute(insert_query, (
@@ -98,4 +106,4 @@ db_name = 'budgeting-tool.db'
 table_name = 'consolidated_transactions'
 csv_file = 'finance-2024-combined.csv'
 
-debug_create_and_insert(db_name, table_name, csv_file)
+create_and_insert(db_name, table_name, csv_file)
