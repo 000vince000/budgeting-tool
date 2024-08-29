@@ -4,6 +4,7 @@ import os
 from collections import defaultdict
 import concurrent.futures
 import threading
+import duckdb
 
 input_lock = threading.Lock()
 
@@ -38,6 +39,7 @@ def currency_to_float(x):
         return 0.0
     return float(str(x).replace('$', '').replace(',', ''))
 
+# this function prompts user for choice of category
 def get_category(description, category_map, unique_categories, user_choices):
     for key, value in category_map.items():
         if key.lower() in description.lower():
@@ -82,7 +84,7 @@ def apply_category_mapping(description, category_map):
             return value
     return None
 
-def process_chase_csv(input_file, global_categories, user_choices):
+def process_chase_csv(input_file, global_categories, user_choices, category_map):
     try:
         df = pd.read_csv(input_file)
     except Exception as e:
@@ -92,40 +94,6 @@ def process_chase_csv(input_file, global_categories, user_choices):
     df = df[df['Description'] != "AUTOMATIC PAYMENT - THANK"]
     df['Card'] = os.path.basename(input_file).split('_')[0]
     df['Memo'] = df.get('Memo', '').fillna('')
-
-    category_map = {
-        "Netflix": "Entertainment",
-        "CUBESMART": "Monthly fixed cost",
-        "Patreon": "Vince spending",
-        "NYTimes": "Kat spending",
-        "AIRALO": "Monthly fixed cost",
-        "Spotify USA": "Monthly fixed cost",
-        "NEW YORK MAGAZINE": "Kat spending",
-        "USAA INSURANCE PAYMENT": "Monthly fixed cost",
-        "LYFT": "Transportation",
-        "AMZN Mktp": "Shopping",
-        "COFFEE": "Drink",
-        "CAFE": "Drink",
-        "nuuly.com": "Kat spending",
-        "Prime Video Channels": "Entertainment",
-        "Google Storage": "Vince spending",
-        "Google One": "Vince spending",
-        "UBER": "Transportation",
-        "MBRSHIP - INTERNAL": "Monthly fixed cost",
-        "BURNABY PRCS BON": "Kids",
-        "BLACK FOREST BROOKLY": "Drink",
-        "BAKERY": "Drink",
-        "CIAO GLORIA": "Drink",
-        "MTA*NYCT PAYGO": "Transportation",
-        "CITIBIK": "Transportation",
-        "CLAUDE.AI SUBSCRIPTION": "Vince spending",
-        "ROGERS": "Monthly fixed cost",
-        "CONDO INS": "Monthly fixed cost",
-        "GEICO": "Monthly fixed cost",
-        "GOOGLE *FI": "Monthly fixed cost",
-        "BLUE CROSS": "Health & Wellness",
-        "ALOHI": "Monthly fixed cost"
-    }
 
     rows_to_drop = []
 
@@ -153,7 +121,7 @@ def process_chase_csv(input_file, global_categories, user_choices):
     df = df.drop(rows_to_drop)
     return df[['Card', 'Transaction Date', 'Description', 'Category', 'Type', 'Amount', 'Memo']]
 
-def process_schwab_csv(input_file, global_categories, user_choices):
+def process_schwab_csv(input_file, global_categories, user_choices, category_map):
     usecols = ['Date', 'Description', 'Type', 'Withdrawal', 'Deposit']
     df = pd.read_csv(input_file, usecols=usecols)
     
@@ -167,19 +135,6 @@ def process_schwab_csv(input_file, global_categories, user_choices):
     df['Amount'] = df['Deposit'] - df['Withdrawal']
     df['Memo'] = ''
     df['Transaction Date'] = df['Date']
-
-    category_map = {
-        'E-ZPASS': 'Transportation',
-        'NYC FINANCE PARKING': 'Transportation',
-        'CHARLIE CHEN': 'Transportation',
-        'GRUBHUB HOLDING': 'Salary',
-        'NYCSHININGSMILES NYCSHINING': 'Kids',
-        'NAJERA-ESTEBAN': 'Kids',
-        'WEB PMTS': 'Monthly property expense',
-        'MORTGAGE': 'Monthly mortgage expense',
-        'JESSE D VANDENBERGH': 'Rental income',
-        'Deposit Mobile Banking': 'Health & Wellness'
-    }
 
     rows_to_drop = []
 
@@ -205,12 +160,28 @@ def process_schwab_csv(input_file, global_categories, user_choices):
 
     return df[['Card', 'Transaction Date', 'Description', 'Category', 'Type', 'Amount', 'Memo']]
 
-def process_files_parallel(input_files, process_func, global_categories, user_choices):
+def process_files_parallel(input_files, process_func, global_categories, user_choices, category_map):
     with concurrent.futures.ThreadPoolExecutor() as executor:
-        processed_dfs = list(executor.map(lambda f: process_func(f, global_categories, user_choices), input_files))
+        processed_dfs = list(executor.map(lambda f: process_func(f, global_categories, user_choices, category_map), input_files))
     
     processed_dfs = [df for df in processed_dfs if df is not None and not df.empty]
     return pd.concat(processed_dfs, ignore_index=True) if processed_dfs else None
+
+# This function queries and load category map from duckdb
+def get_category_mapping_from_db():
+    conn = duckdb.connect("budgeting-tool.db")
+    query = f"""
+        select keyword, category from category_matching_patterns
+    """
+    # Execute the query and fetch the results as a dictionary
+    data = conn.execute(query).fetchall()
+    print("Fetched keyword lookup from duckdb:")
+    for k,v in dict(data).items():
+        print(f"{k}:{v}")  # This will print each row as a dictionary
+
+    # Close the connection
+    conn.close()
+    return dict(data)
 
 def main():
     global_categories = [
@@ -226,6 +197,8 @@ def main():
     chase_files = []
     schwab_files = []
 
+    category_map = get_category_mapping_from_db()
+
     while True:
         bank_choice = get_user_choice("Select bank type:", ["Chase", "Charles Schwab", "Done"])
         if bank_choice == "Done":
@@ -238,12 +211,12 @@ def main():
     combined_df = pd.DataFrame()
 
     if chase_files:
-        chase_df = process_files_parallel(chase_files, process_chase_csv, global_categories, user_choices)
+        chase_df = process_files_parallel(chase_files, process_chase_csv, global_categories, user_choices, category_map)
         if chase_df is not None:
             combined_df = pd.concat([combined_df, chase_df], ignore_index=True)
 
     if schwab_files:
-        schwab_df = process_files_parallel(schwab_files, process_schwab_csv, global_categories, user_choices)
+        schwab_df = process_files_parallel(schwab_files, process_schwab_csv, global_categories, user_choices, category_map)
         if schwab_df is not None:
             combined_df = pd.concat([combined_df, schwab_df], ignore_index=True)
 
