@@ -8,6 +8,13 @@ import duckdb
 
 input_lock = threading.Lock()
 
+class DebugLevel(Enum):
+    WARN = 0
+    GENERAL = 1
+    GRANULAR = 2
+
+debugLevel = None
+
 def get_user_choice(prompt, options):
     while True:
         print(prompt)
@@ -168,8 +175,7 @@ def process_files_parallel(input_files, process_func, global_categories, user_ch
     return pd.concat(processed_dfs, ignore_index=True) if processed_dfs else None
 
 # This function queries and load category map from duckdb
-def get_category_mapping_from_db():
-    conn = duckdb.connect("budgeting-tool.db")
+def get_category_mapping_from_db(conn):
     query = f"""
         select keyword, category from category_matching_patterns
     """
@@ -197,7 +203,8 @@ def main():
     chase_files = []
     schwab_files = []
 
-    category_map = get_category_mapping_from_db()
+    conn = duckdb.connect("budgeting-tool.db")
+    category_map = get_category_mapping_from_db(conn)
 
     while True:
         bank_choice = get_user_choice("Select bank type:", ["Chase", "Charles Schwab", "Done"])
