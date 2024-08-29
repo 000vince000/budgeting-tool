@@ -5,14 +5,9 @@ from collections import defaultdict
 import concurrent.futures
 import threading
 import duckdb
+from datetime import datetime
 
 input_lock = threading.Lock()
-
-class DebugLevel(Enum):
-    WARN = 0
-    GENERAL = 1
-    GRANULAR = 2
-
 debugLevel = None
 
 def get_user_choice(prompt, options):
@@ -181,13 +176,47 @@ def get_category_mapping_from_db(conn):
     """
     # Execute the query and fetch the results as a dictionary
     data = conn.execute(query).fetchall()
-    print("Fetched keyword lookup from duckdb:")
-    for k,v in dict(data).items():
-        print(f"{k}:{v}")  # This will print each row as a dictionary
+    #print("Fetched keyword lookup from duckdb:")
+    #for k,v in dict(data).items():
+    #    print(f"{k}:{v}")  # This will print each row as a dictionary
 
-    # Close the connection
-    conn.close()
     return dict(data)
+
+# This function persists df into duckdb
+def persist_data_in_db(conn, df, quoted_table_name):
+    cols = df.columns.to_list()
+    imploded_col_names = ', '.join(f'"{col}"' for col in cols)
+    inserted_count = 0
+    error_count = 0
+
+    for index, row in df.iterrows():
+        insert_query = f"""
+        INSERT INTO {quoted_table_name} ({imploded_col_names}) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """
+        try:
+            conn.execute(insert_query, (
+                row[cols[0]],
+                datetime.strptime(row[cols[1]], '%m/%d/%Y').date(),
+                row[cols[2]],
+                row[cols[3]],
+                row[cols[4]],
+                row[cols[5]],
+                row[cols[6]]
+            ))
+            inserted_count += 1
+        except duckdb.ConstraintException as ce:
+            print(f"ConstraintException for row {index}: {str(ce)}")
+            error_count += 1
+        except Exception as e:
+            print(f"Error inserting row {index}: {str(e)}")
+            error_count += 1
+    print(f"Insertion complete. Rows inserted: {inserted_count}, Rows failed: {error_count}")
+
+    # Compute stats
+    #for category in df['Category'].unique():
+    #    if pd.notna(category):
+    #        category_count = df['Category'].eq(category).sum()
+    #        print(f"\nTransactions marked as '{category}': {category_count} ({category_count / len(df) * 100:.2f}%)")
 
 def main():
     global_categories = [
@@ -205,6 +234,7 @@ def main():
 
     conn = duckdb.connect("budgeting-tool.db")
     category_map = get_category_mapping_from_db(conn)
+    table_name = 'consolidated_transactions'
 
     while True:
         bank_choice = get_user_choice("Select bank type:", ["Chase", "Charles Schwab", "Done"])
@@ -228,17 +258,16 @@ def main():
             combined_df = pd.concat([combined_df, schwab_df], ignore_index=True)
 
     if not combined_df.empty:
-        output_file = 'finance-2024-combined.csv'
-        combined_df.to_csv(output_file, index=False)
-        print(f"Processing complete. Output saved to {output_file}")
+        #output_file = 'finance-2024-combined.csv'
+        #combined_df.to_csv(output_file, index=False)
+        #print(f"Processing complete. Output saved to {output_file}")
 
-        for category in combined_df['Category'].unique():
-            if pd.notna(category):
-                category_count = combined_df['Category'].eq(category).sum()
-                print(f"\nTransactions marked as '{category}': {category_count} ({category_count / len(combined_df) * 100:.2f}%)")
+        persist_data_in_db(conn, combined_df, table_name)
 
     else:
         print("Error: No data to save. Please check your input files and try again.")
 
+    # Close the connection
+    conn.close()
 if __name__ == "__main__":
     main()
