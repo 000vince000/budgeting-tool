@@ -114,6 +114,16 @@ category_map = {
     "GEICO": "Monthly fixed cost",
     "GOOGLE *FI": "Monthly fixed cost",
     "BLUE CROSS": "Health & Wellness",
-    "ALOHI": "Monthly fixed cost"
+    "ALOHI": "Monthly fixed cost",
+    'E-ZPASS': 'Transportation',
+    'NYC FINANCE PARKING': 'Transportation',
+    'CHARLIE CHEN': 'Transportation',
+    'GRUBHUB HOLDING': 'Salary',
+    'NYCSHININGSMILES NYCSHINING': 'Kids',
+    'NAJERA-ESTEBAN': 'Kids',
+    'WEB PMTS': 'Monthly property expense',
+    'MORTGAGE': 'Monthly mortgage expense',
+    'JESSE D VANDENBERGH': 'Rental income',
+    'Deposit Mobile Banking': 'Health & Wellness'
 }
 create_and_insert(db_name, table_name, category_map)
