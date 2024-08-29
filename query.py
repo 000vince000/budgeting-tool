@@ -2,6 +2,7 @@ import duckdb
 import pandas as pd
 from datetime import datetime
 
+
 def query_latest_month(db_name, table_name):
     conn = duckdb.connect(db_name)
 	
