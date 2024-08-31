@@ -103,22 +103,22 @@ def process_chase_csv(input_file, global_categories, user_choices, category_map)
         mapped_category = apply_category_mapping(row['Description'], category_map)
         
         if mapped_category:
+            old_category = df.at[index, 'Category']
             df.at[index, 'Category'] = mapped_category
-            df.at[index, 'Memo'] += ' Category assigned automatically via script'
+            df.at[index, 'Memo'] += f' Category updated via script from {old_category}'
         elif pd.isna(row['Category']) or row['Category'] in ["Professional Services", "Personal", ""]:
             category, user_intervened = get_category(row['Description'], category_map, global_categories, user_choices)
             if category == "EXCLUDE":
-                rows_to_drop.append(index)
+                #rows_to_drop.append(index)
+                #instead of dropping the row, we'll just set the category to None
+                df.at[index, 'Category'] = None
             else:
+                old_category = df.at[index, 'Category']
                 df.at[index, 'Category'] = category
                 if user_intervened:
-                    df.at[index, 'Memo'] += ' Category assigned by user via script'
+                    df.at[index, 'Memo'] += ' Category replaced by user via script from {old_category}'
                 else:
                     df.at[index, 'Memo'] += ' Category assigned automatically via script'
-        else:
-            # If the category is already defined and valid, keep it
-            if row['Category'] not in global_categories:
-                global_categories.append(row['Category'])
 
     df = df.drop(rows_to_drop)
     return df[['Card', 'Transaction Date', 'Description', 'Category', 'Type', 'Amount', 'Memo']]
