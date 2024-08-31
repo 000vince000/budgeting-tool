@@ -106,7 +106,7 @@ def process_chase_csv(input_file, global_categories, user_choices, category_map)
             old_category = df.at[index, 'Category']
             df.at[index, 'Category'] = mapped_category
             df.at[index, 'Memo'] += f' Category updated via script from {old_category}'
-        elif pd.isna(row['Category']) or row['Category'] in ["Professional Services", "Personal", ""]:
+        elif pd.isna(row['Category']) or row['Category'] in ["Bills & Utilities", "Professional Services", "Personal", ""]:
             category, user_intervened = get_category(row['Description'], category_map, global_categories, user_choices)
             if category == "EXCLUDE":
                 #rows_to_drop.append(index)
@@ -185,8 +185,7 @@ def get_global_categories_from_db(conn):
     """
     # Execute the query and fetch the results as a list
     data = conn.execute(query).fetchall()
-    return data
-
+    return [item[0] for item in data]
 # This function persists df into duckdb
 def persist_data_in_db(conn, df, quoted_table_name):
     cols = df.columns.to_list()
