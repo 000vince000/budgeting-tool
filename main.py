@@ -4,8 +4,13 @@ import os
 from collections import defaultdict
 import concurrent.futures
 import threading
-import duckdb
 from datetime import datetime
+from db_operations import (
+    get_category_mapping_from_db,
+    get_global_categories_from_db,
+    persist_data_in_db,
+    get_db_connection
+)
 
 input_lock = threading.Lock()
 debugLevel = None
@@ -169,62 +174,16 @@ def process_files_parallel(input_files, process_func, global_categories, user_ch
     processed_dfs = [df for df in processed_dfs if df is not None and not df.empty]
     return pd.concat(processed_dfs, ignore_index=True) if processed_dfs else None
 
-# This function queries and load category map from duckdb
-def get_category_mapping_from_db(conn):
-    query = f"""
-        select keyword, category from category_matching_patterns
-    """
-    # Execute the query and fetch the results as a dictionary
-    data = conn.execute(query).fetchall()
-    return dict(data)
-
-# This function queries the duckdb for existing categories
-def get_global_categories_from_db(conn):
-    query = f"""
-        select category from categories
-    """
-    # Execute the query and fetch the results as a list
-    data = conn.execute(query).fetchall()
-    return [item[0] for item in data]
-# This function persists df into duckdb
-def persist_data_in_db(conn, df, quoted_table_name):
-    cols = df.columns.to_list()
-    imploded_col_names = ', '.join(f'"{col}"' for col in cols)
-    inserted_count = 0
-    error_count = 0
-
-    for index, row in df.iterrows():
-        insert_query = f"""
-        INSERT INTO {quoted_table_name} ({imploded_col_names}) VALUES (?, ?, ?, ?, ?, ?, ?)
-        """
-        try:
-            conn.execute(insert_query, (
-                row[cols[0]],
-                datetime.strptime(row[cols[1]], '%m/%d/%Y').date(),
-                row[cols[2]],
-                row[cols[3]],
-                row[cols[4]],
-                row[cols[5]],
-                row[cols[6]]
-            ))
-            inserted_count += 1
-        except duckdb.ConstraintException as ce:
-            print(f"ConstraintException for row {index}: {str(ce)}")
-            error_count += 1
-        except Exception as e:
-            print(f"Error inserting row {index}: {str(e)}")
-            error_count += 1
-    print(f"Insertion complete. Rows inserted: {inserted_count}, Rows failed: {error_count}")
-
 def main():
-    user_choices = {}
-    chase_files = []
-    schwab_files = []
-
-    conn = duckdb.connect("budgeting-tool.db")
+    db_path = "budgeting-tool.db"
+    conn = get_db_connection(db_path)
     category_map = get_category_mapping_from_db(conn)
     global_categories = get_global_categories_from_db(conn)
     table_name = 'consolidated_transactions'
+
+    user_choices = {}
+    chase_files = []
+    schwab_files = []
 
     while True:
         bank_choice = get_user_choice("Select bank type:", ["Chase", "Charles Schwab", "Done"])
@@ -248,15 +207,11 @@ def main():
             combined_df = pd.concat([combined_df, schwab_df], ignore_index=True)
 
     if not combined_df.empty:
-        #output_file = 'finance-2024-combined.csv'
-        #combined_df.to_csv(output_file, index=False)
-        #print(f"Processing complete. Output saved to {output_file}")
         persist_data_in_db(conn, combined_df, table_name)
-
     else:
         print("Error: No data to save. Please check your input files and try again.")
 
-    # Close the connection
     conn.close()
+
 if __name__ == "__main__":
     main()
