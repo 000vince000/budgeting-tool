@@ -176,11 +176,16 @@ def get_category_mapping_from_db(conn):
     """
     # Execute the query and fetch the results as a dictionary
     data = conn.execute(query).fetchall()
-    #print("Fetched keyword lookup from duckdb:")
-    #for k,v in dict(data).items():
-    #    print(f"{k}:{v}")  # This will print each row as a dictionary
-
     return dict(data)
+
+# This function queries the duckdb for existing categories
+def get_global_categories_from_db(conn):
+    query = f"""
+        select category from categories
+    """
+    # Execute the query and fetch the results as a list
+    data = conn.execute(query).fetchall()
+    return data
 
 # This function persists df into duckdb
 def persist_data_in_db(conn, df, quoted_table_name):
@@ -212,28 +217,14 @@ def persist_data_in_db(conn, df, quoted_table_name):
             error_count += 1
     print(f"Insertion complete. Rows inserted: {inserted_count}, Rows failed: {error_count}")
 
-    # Compute stats
-    #for category in df['Category'].unique():
-    #    if pd.notna(category):
-    #        category_count = df['Category'].eq(category).sum()
-    #        print(f"\nTransactions marked as '{category}': {category_count} ({category_count / len(df) * 100:.2f}%)")
-
 def main():
-    global_categories = [
-        "Groceries", "Food & Drink", "Travel", "Drink", "Shopping",
-        "Automotive", "Health & Wellness", "Monthly fixed cost",
-        "Vince spending", "Transportation", "Home", "Entertainment",
-        "Education", "Kat spending", "Gas", "Fees & Adjustments",
-        "Kids", "Gifts & Donations", "Monthly property expense",
-        "Monthly mortgage expense", "Salary", "Rental income"
-    ]
-
     user_choices = {}
     chase_files = []
     schwab_files = []
 
     conn = duckdb.connect("budgeting-tool.db")
     category_map = get_category_mapping_from_db(conn)
+    global_categories = get_global_categories_from_db(conn)
     table_name = 'consolidated_transactions'
 
     while True:
@@ -261,7 +252,6 @@ def main():
         #output_file = 'finance-2024-combined.csv'
         #combined_df.to_csv(output_file, index=False)
         #print(f"Processing complete. Output saved to {output_file}")
-
         persist_data_in_db(conn, combined_df, table_name)
 
     else:
