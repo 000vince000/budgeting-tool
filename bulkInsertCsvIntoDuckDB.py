@@ -2,7 +2,7 @@ import duckdb
 import pandas as pd
 from datetime import datetime
 
-def create_and_insert(db_name, table_name, csv_file):
+def insert_csv_into_duckdb(db_name, table_name, csv_file):
     conn = duckdb.connect(db_name)
     
     # Quote the table name to handle special characters and numbers
@@ -17,30 +17,6 @@ def create_and_insert(db_name, table_name, csv_file):
         # Convert 'Transaction Date' to datetime
         df['Transaction Date'] = pd.to_datetime(df['Transaction Date'], format='%m/%d/%Y')
 
-        # Step 1.5: Create autoincrementing sequence
-        create_seq_query = f"""
-            CREATE SEQUENCE consolidated_transactions_id_seq START 1;
-        """
-        conn.execute(create_seq_query)
-
-        # Step 2: Create table
-        print("\nStep 2: Creating table")
-        create_table_query = f"""
-        CREATE TABLE IF NOT EXISTS {quoted_table_name} (
-            id BIGINT DEFAULT nextval('consolidated_transactions_id_seq') PRIMARY KEY,
-            "Card" VARCHAR,
-            "Transaction Date" DATE,
-            "Description" VARCHAR,
-            "Category" VARCHAR,
-            "Type" VARCHAR,
-            "Amount" DECIMAL(10, 2),
-            "Memo" VARCHAR,
-            UNIQUE ("Card", "Transaction Date", "Description", "Amount")
-        )
-        """
-        print(f"Create table query:\n{create_table_query}")
-        conn.execute(create_table_query)
-        
         # Step 3: Check if a primary key exists on the table
         check_pk = f"""
         SELECT COUNT(*)
@@ -106,4 +82,4 @@ db_name = 'budgeting-tool.db'
 table_name = 'consolidated_transactions'
 csv_file = 'finance-2024-combined.csv'
 
-create_and_insert(db_name, table_name, csv_file)
+insert_csv_into_duckdb(db_name, table_name, csv_file)
