@@ -1,6 +1,11 @@
 import duckdb
 from datetime import datetime
 
+def query_and_return_df(conn, query_statement):
+    print(query_statement)
+    df = conn.execute(query_statement).fetchdf()
+    return df
+
 def get_category_mapping_from_db(conn):
     query = """
         select keyword, category from category_matching_patterns
@@ -44,6 +49,3 @@ def persist_data_in_db(conn, df, quoted_table_name):
             error_count += 1
     
     print(f"Insertion complete. Rows inserted: {inserted_count}, Rows failed: {error_count}")
-
-def get_db_connection(db_path):
-    return duckdb.connect(db_path)

@@ -39,7 +39,7 @@ category_stats AS (
 latest_month_sums AS (
     SELECT 
         c.category,
-        COALESCE(SUM(ct.amount), 0) AS latest_month_sum
+        COALESCE(ABS(SUM(ct.amount)), 0) AS latest_month_sum
     FROM categories c
     LEFT JOIN consolidated_transactions ct 
         ON c.category = ct.category
