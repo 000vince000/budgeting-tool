@@ -52,7 +52,15 @@ SELECT
         WHEN cs.avg_monthly_sum = 0 THEN NULL
         ELSE ROUND((cs.stddev_monthly_sum / cs.avg_monthly_sum) * 100, 2)
     END AS avg_percent_variance,
-    ROUND(COALESCE(lms.latest_month_sum, 0), 2) AS latest_month_sum
+    ROUND(COALESCE(lms.latest_month_sum, 0), 2) AS latest_month_sum,
+    cb.budget,
+    CASE
+        WHEN cb.budget IS NULL THEN ''
+        WHEN lms.latest_month_sum < cb.budget THEN 'Under budget by $' || (cb.budget - lms.latest_month_sum)::INT::TEXT
+        WHEN lms.latest_month_sum > cb.budget THEN 'Over budget by $' || (lms.latest_month_sum - cb.budget)::INT::TEXT
+        ELSE 'On budget'
+    END AS budget_status
 FROM category_stats cs
 LEFT JOIN latest_month_sums lms ON cs.category = lms.category
+LEFT JOIN current_budgets cb ON cs.category = cb.category
 ORDER BY ROUND(COALESCE(lms.latest_month_sum, 0), 2) ASC;

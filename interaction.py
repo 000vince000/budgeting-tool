@@ -58,8 +58,7 @@ def set_budget(conn):
                         amount = float(input(f"Enter budget for {selected_category}: $"))
                         db_operations.insert_category_budget(conn, selected_category, int(amount))
                         print(f"Budget for {selected_category} set to ${amount:.2f}")
-                        with open('current-budgets.sql', 'r') as file:
-                            query = file.read()
+                        query = "SELECT * FROM current_budgets"
                         df = db_operations.query_and_return_df(conn, query)
                         print(df)
                         break

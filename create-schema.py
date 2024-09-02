@@ -1,4 +1,6 @@
 import duckdb
+import os
+
 # This function is idempotent
 def create_table_consolidated_transactions(conn):
     try:
@@ -26,6 +28,7 @@ def create_table_consolidated_transactions(conn):
     except Exception as e:
         print(f"An error occurred while creating consolidated_transactions: {str(e)}")
         raise
+
 # This function is idempotent
 def create_table_category_budgets(conn):
     try:
@@ -50,6 +53,24 @@ def create_table_category_budgets(conn):
         print(f"An error occurred while creating category_budgets: {str(e)}")
         raise
 
+def create_current_budgets_view(conn):
+    try:
+        # Read the SQL query from the file
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        sql_file_path = os.path.join(current_dir, 'current-budgets.sql')
+        
+        with open(sql_file_path, 'r') as sql_file:
+            view_query = sql_file.read()
+
+        # Create the view
+        create_view_query = f"CREATE OR REPLACE VIEW current_budgets AS {view_query}"
+        conn.execute(create_view_query)
+        print("View current_budgets created successfully")
+
+    except Exception as e:
+        print(f"An error occurred while creating the current_budgets view: {str(e)}")
+        raise
+
 if __name__ == "__main__":
     db_name = 'budgeting-tool.db'
     
@@ -57,7 +78,9 @@ if __name__ == "__main__":
         conn = duckdb.connect(db_name)
         create_table_consolidated_transactions(conn)
         create_table_category_budgets(conn)
+        create_current_budgets_view(conn)
         conn.commit()
+        print("All operations completed successfully")
     except Exception as e:
         print(f"An error occurred: {str(e)}")
         conn.rollback()

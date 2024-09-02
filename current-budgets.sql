@@ -1,3 +1,5 @@
+-- This query retrieves the current budget for each category from the category_budgets table.
+-- This query is also already created as a view in the database.
 SELECT 
     c.category,
     cb.budget,
