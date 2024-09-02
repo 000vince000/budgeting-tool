@@ -49,3 +49,17 @@ def persist_data_in_db(conn, df, quoted_table_name):
             error_count += 1
     
     print(f"Insertion complete. Rows inserted: {inserted_count}, Rows failed: {error_count}")
+
+def insert_category_budget(conn, category, budget):
+    try:
+        insert_query = """
+        INSERT INTO category_budgets (category, budget)
+        VALUES (?, ?)
+        """
+        conn.execute(insert_query, (category, budget))
+        conn.commit()
+        print(f"Budget of {budget} for category '{category}' inserted successfully")
+    except Exception as e:
+        print(f"An error occurred while inserting budget for category '{category}': {str(e)}")
+        conn.rollback()
+        raise

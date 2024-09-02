@@ -5,10 +5,6 @@ import matplotlib.pyplot as plt
 import webbrowser
 from db_operations import query_and_return_df
 
-def get_data(db_name, query):
-    with duckdb.connect(db_name) as conn:
-        return query_and_return_df(conn, query)
-
 def create_plot(df):
     plt.figure(figsize=(15, 10))
     x = range(len(df))
@@ -34,10 +30,11 @@ def create_plot(df):
 db_name = 'budgeting-tool.db'
 output_file = 'spending_comparison.png'
 
-with open('queries.sql', 'r') as file:
+with open('latest-month-summary.sql', 'r') as file:
     query = file.read()
 
-df = get_data(db_name, query)
+conn = duckdb.connect(db_name)
+df = query_and_return_df(conn, query)
 print(df)
 
 # Filter and sort data

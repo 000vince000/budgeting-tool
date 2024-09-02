@@ -1,6 +1,7 @@
 cache/
 exports/
 __pycache__/
+venv/
 .DS_Store
 *.csv
 *.sav
@@ -8,3 +9,5 @@ __pycache__/
 *.swp
 *.swo
 *.png
+000vince000
+000vince000.pub

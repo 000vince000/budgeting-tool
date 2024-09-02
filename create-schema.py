@@ -1,5 +1,5 @@
 import duckdb
-
+# This function is idempotent
 def create_table_consolidated_transactions(conn):
     try:
         # Create autoincrementing sequence
@@ -26,7 +26,7 @@ def create_table_consolidated_transactions(conn):
     except Exception as e:
         print(f"An error occurred while creating consolidated_transactions: {str(e)}")
         raise
-
+# This function is idempotent
 def create_table_category_budgets(conn):
     try:
         # Create autoincrementing sequence
