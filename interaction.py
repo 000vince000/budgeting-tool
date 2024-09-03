@@ -32,18 +32,28 @@ def main_menu(conn):
         print("\nMain Menu:")
         print("1. See latest month's spending profile")
         print("2. Dig into a specific category")
-        print("3. Set budget")
-        print("4. Exit")
+        print("3. See 95th percentile most expensive nonrecurring spendings from the latest month")
+        print("4. Set budget")
+        print("5. Exit")
         
-        choice = input("Enter your choice (1-4): ")
+        choice = input("Enter your choice (1-5): ")
         
         if choice == '1':
             run_visualize_script()
         elif choice == '2':
             dig_into_category(conn)
         elif choice == '3':
-            set_budget(conn)
+            df = db_operations.show_p95_expensive_nonrecurring_for_latest_month(conn)
+            if df is None:
+                print("No non-recurring expenses found.")
+            else:
+                print("\n95th percentile most expensive non-recurring spendings:")
+                print(df.to_string(index=False))
+                total = df['Amount'].sum()
+                print(f"Total ........................... ${total:.2f}")
         elif choice == '4':
+            set_budget(conn)
+        elif choice == '5':
             break
         else:
             print("Invalid choice. Please try again.")

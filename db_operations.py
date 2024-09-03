@@ -1,5 +1,6 @@
 import duckdb
 from datetime import datetime
+import pandas as pd
 
 def get_db_connection(db_name):
     conn = duckdb.connect(db_name)
@@ -103,3 +104,35 @@ def fetch_transactions(conn, category, latest_month):
     ORDER BY id
     """
     return query_and_return_df(conn, query, params=(category, latest_month))
+
+def show_p95_expensive_nonrecurring_for_latest_month(conn):
+    query = """
+    WITH latest_month AS (
+        SELECT DATE_TRUNC('month', MAX("Transaction Date")) AS month
+        FROM consolidated_transactions
+    ),
+    nonrecurring_expenses AS (
+        SELECT Description, Amount, "Transaction Date", Category
+        FROM consolidated_transactions, latest_month
+        WHERE Category NOT IN ('Monthly fixed cost', 'Monthly property expense', 'Monthly mortgage expense')
+          AND Amount < 0
+          AND DATE_TRUNC('month', "Transaction Date") = latest_month.month
+    ),
+    percentile_calc AS (
+        SELECT *, 
+               PERCENT_RANK() OVER (ORDER BY Amount DESC) AS percentile
+        FROM nonrecurring_expenses
+    )
+    SELECT Description, Amount, "Transaction Date", Category
+    FROM percentile_calc
+    WHERE percentile >= 0.95
+    ORDER BY Amount ASC
+    """
+    df = query_and_return_df(conn, query)
+    
+    if df.empty:
+        return None
+    else:
+        df['Amount'] = df['Amount'].abs()  # Convert to positive for display
+        df = df.sort_values('Amount', ascending=False)  # Sort by Amount in descending order        
+        return df
