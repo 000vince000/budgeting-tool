@@ -7,6 +7,26 @@ import pandas as pd
 # Get the directory of the current script
 current_dir = os.path.dirname(os.path.abspath(__file__))
 
+def print_ascii_title():
+    ascii_art = r"""
+ ____            _            _   _                _____           _ 
+|  _ \          | |          | | (_)              |_   _|         | |
+| |_) |_   _  __| | __ _  ___| |_ _ _ __   __ _     | |  ___   ___| |
+|  _ <| | | |/ _` |/ _` |/ _ \ __| | '_ \ / _` |    | | / _ \ / _ \ |
+| |_) | |_| | (_| | (_| |  __/ |_| | | | | (_| |    | || (_) | (_)| |
+|____/ \__,_|\__,_|\__, |\___|\__|_|_| |_|\__, |    \_/ \___/ \___|_|
+                    __/ |                  __/ |                     
+                   |___/                  |___/                      
+ _           _____ ___ ____      
+| |_ ___    |  ___|_ _|  _ \  ___ 
+| __/ _ \   | |_   | || |_) |/ _ \
+| || (_) |  |  _|  | ||  _ <|  __/
+ \__\___/   |_|   |___|_| \_\____|
+                                  
+           By Vince Chen
+"""
+    print(ascii_art)
+
 def main_menu(conn):
     while True:
         print("\nMain Menu:")
@@ -147,6 +167,7 @@ def set_budget(conn):
             print("Please enter a valid number.")
 
 if __name__ == "__main__":
+    print_ascii_title()
     db_name = 'budgeting-tool.db'
     conn = duckdb.connect(db_name)
     try:

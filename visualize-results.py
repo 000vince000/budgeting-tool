@@ -6,12 +6,18 @@ import webbrowser
 from db_operations import query_and_return_df
 import math
 
+def print_divider(title):
+    print("\n" + "=" * 40)
+    print(title)
+    print("=" * 40)
+
 def create_plot(df):
     plt.figure(figsize=(15, 10))
     x = range(len(df))
     width = 0.6
 
     bars = plt.bar(x, df['latest_month_sum'], width, label='Latest Month Sum', color='skyblue', alpha=0.7)
+    #plt.scatter(x, df['avg_monthly_sum'], color='red', marker='o', s=50, label='Average')
     plt.scatter(x, df['p50_monthly_sum'], color='green', marker='s', s=50, label='P50')
     plt.scatter(x, df['p85_monthly_sum'], color='purple', marker='^', s=50, label='P85')
 
@@ -24,35 +30,54 @@ def create_plot(df):
 
     for bar in bars:
         height = bar.get_height()
-        rounded_height = math.ceil(height)  # Round up to the nearest integer
+        rounded_height = math.ceil(height)
         plt.text(bar.get_x() + bar.get_width()/2., height, f'${rounded_height}', 
                  ha='center', va='bottom')
 
-    # Update y-axis ticks to show dollar signs
     plt.gca().yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'${int(x):,}'))
 
-# Main execution
-db_name = 'budgeting-tool.db'
-output_file = 'spending_comparison.png'
+def calculate_net_income(df):
+    income_categories = ['Salary', 'Rental income']
+    income = df[df['Category'].isin(income_categories)]['latest_month_sum'].sum()
+    expenses = df[~df['Category'].isin(income_categories)]['latest_month_sum'].sum()
+    net_income = income - expenses
+    
+    print_divider("Income and Expense Summary")
+    print(f"Total Income (Salary + Rental income): ${income:.2f}")
+    print(f"Total Expenses: ${expenses:.2f}")
+    print(f"Net Income: ${net_income:.2f}")
 
-with open('latest-month-summary.sql', 'r') as file:
-    query = file.read()
+    return net_income
 
-conn = duckdb.connect(db_name)
-df = query_and_return_df(conn, query)
-print(df)
+def main():
+    db_name = 'budgeting-tool.db'
+    output_file = 'spending_comparison.png'
 
-# Filter and sort data
-excluded_categories = ['Salary', 'Rental income']
-df_filtered = df[~df['Category'].isin(excluded_categories)].sort_values('latest_month_sum', ascending=False)
+    with open('latest-month-summary.sql', 'r') as file:
+        query = file.read()
 
-create_plot(df_filtered)
+    conn = duckdb.connect(db_name)
+    df = query_and_return_df(conn, query)
+    
+    print_divider("Latest Month Summary")
+    print(df)
 
-# Save and open the plot
-plt.savefig(output_file, dpi=300, bbox_inches='tight')
-print(f"Plot saved as {output_file}")
+    net_income = calculate_net_income(df)
 
-full_path = os.path.abspath(output_file)
-print(f"File exists: {os.path.exists(output_file)}")
-print(f"Full path: {full_path}")
-webbrowser.open(f'file://{full_path}')
+    excluded_categories = ['Salary', 'Rental income']
+    df_filtered = df[~df['Category'].isin(excluded_categories)].sort_values('latest_month_sum', ascending=False)
+
+    create_plot(df_filtered)
+
+    plt.savefig(output_file, dpi=300, bbox_inches='tight')
+    
+    print_divider("Plot Generation")
+    print(f"Plot saved as {output_file}")
+    full_path = os.path.abspath(output_file)
+    print(f"File exists: {os.path.exists(output_file)}")
+    print(f"Full path: {full_path}")
+    
+    webbrowser.open(f'file://{full_path}')
+
+if __name__ == "__main__":
+    main()
