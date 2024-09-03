@@ -131,7 +131,7 @@ def process_chase_csv(input_file, global_categories, user_choices, category_map)
 def process_schwab_csv(input_file, global_categories, user_choices, category_map):
     usecols = ['Date', 'Description', 'Type', 'Withdrawal', 'Deposit']
     df = pd.read_csv(input_file, usecols=usecols)
-    
+    # filtering out Chase Credit card payments
     df = df[~df['Description'].str.contains('CHASE CREDIT', case=False, na=False)]
     df = df[df['Type'] != 'TRANSFER']
 
@@ -154,7 +154,9 @@ def process_schwab_csv(input_file, global_categories, user_choices, category_map
         else:
             category, user_intervened = get_category(row['Description'], category_map, global_categories, user_choices)
             if category == "EXCLUDE":
-                rows_to_drop.append(index)
+                #rows_to_drop.append(index)
+                #instead of dropping the row, we'll just set the category to None
+                df.at[index, 'Category'] = None
             else:
                 df.at[index, 'Category'] = category
                 if user_intervened:

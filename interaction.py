@@ -109,17 +109,21 @@ def dig_into_category(conn):
                                     print("\nAvailable categories:")
                                     for i, category in enumerate(categories, 1):
                                         print(f"{i}. {category}")
-                                    new_category_index = int(input("Enter the number of the new category: "))
+                                    print(f"{len(categories) + 1}. Exclude (set category to NULL)")
+                                    new_category_index = int(input("Enter the number of the new category or Exclude option: "))
                                     if 1 <= new_category_index <= len(categories):
                                         new_category = categories[new_category_index - 1]
                                         db_operations.recategorize_transaction(conn, transaction_id, new_category, selected_category)
                                         print(f"Transaction {transaction_id} recategorized to {new_category}")
-                                        # Refresh the dataframe
-                                        df = db_operations.query_and_return_df(conn, query, params=(selected_category,))
-                                        print("\nUpdated transactions:")
-                                        print(df.to_string(index=False))
+                                    elif new_category_index == len(categories) + 1:
+                                        db_operations.recategorize_transaction(conn, transaction_id, None, selected_category)
+                                        print(f"Transaction {transaction_id} excluded (category set to NULL)")
                                     else:
                                         print("Invalid category number.")
+                                    # Refresh the dataframe
+                                    df = db_operations.query_and_return_df(conn, query, params=(selected_category,))
+                                    print("\nUpdated transactions:")
+                                    print(df.to_string(index=False))
                                 else:
                                     print("Invalid transaction ID.")
                             except ValueError:
