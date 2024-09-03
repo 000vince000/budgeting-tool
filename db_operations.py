@@ -1,9 +1,16 @@
 import duckdb
 from datetime import datetime
 
-def query_and_return_df(conn, query_statement):
+def get_db_connection(db_name):
+    conn = duckdb.connect(db_name)
+    return conn
+
+def query_and_return_df(conn, query_statement, params=None):
     print(query_statement)
-    df = conn.execute(query_statement).fetchdf()
+    if params:
+        df = conn.execute(query_statement, params).fetchdf()
+    else:
+        df = conn.execute(query_statement).fetchdf()
     return df
 
 def get_category_mapping_from_db(conn):
@@ -63,3 +70,17 @@ def insert_category_budget(conn, category, budget):
         print(f"An error occurred while inserting budget for category '{category}': {str(e)}")
         conn.rollback()
         raise
+
+def recategorize_transaction(conn, transaction_id, new_category, old_category):
+    query = """
+    UPDATE consolidated_transactions
+    SET Category = ?,
+        Memo = CASE
+            WHEN Memo IS NULL OR Memo = '' THEN ?
+            ELSE Memo || ?
+        END
+    WHERE id = ?
+    """
+    memo_addition = f". Recategorized by user from {old_category}"
+    conn.execute(query, (new_category, memo_addition, memo_addition, transaction_id))
+    conn.commit()
