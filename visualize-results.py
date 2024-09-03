@@ -4,6 +4,7 @@ import duckdb
 import matplotlib.pyplot as plt
 import webbrowser
 from db_operations import query_and_return_df
+import math
 
 def create_plot(df):
     plt.figure(figsize=(15, 10))
@@ -11,7 +12,6 @@ def create_plot(df):
     width = 0.6
 
     bars = plt.bar(x, df['latest_month_sum'], width, label='Latest Month Sum', color='skyblue', alpha=0.7)
-    #plt.scatter(x, df['avg_monthly_sum'], color='red', marker='o', s=50, label='Average')
     plt.scatter(x, df['p50_monthly_sum'], color='green', marker='s', s=50, label='P50')
     plt.scatter(x, df['p85_monthly_sum'], color='purple', marker='^', s=50, label='P85')
 
@@ -24,7 +24,12 @@ def create_plot(df):
 
     for bar in bars:
         height = bar.get_height()
-        plt.text(bar.get_x() + bar.get_width()/2., height, f'{height:.2f}', ha='center', va='bottom')
+        rounded_height = math.ceil(height)  # Round up to the nearest integer
+        plt.text(bar.get_x() + bar.get_width()/2., height, f'${rounded_height}', 
+                 ha='center', va='bottom')
+
+    # Update y-axis ticks to show dollar signs
+    plt.gca().yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'${int(x):,}'))
 
 # Main execution
 db_name = 'budgeting-tool.db'
