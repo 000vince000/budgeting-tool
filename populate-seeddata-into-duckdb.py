@@ -94,7 +94,8 @@ category_map = {
     "NEW YORK MAGAZINE": "Kat spending",
     "USAA INSURANCE PAYMENT": "Monthly fixed cost",
     "LYFT": "Transportation",
-    "AMZN Mktp": "Shopping",
+    "AMZN Mktp": "Amazon",
+    "AMAZON": "Amazon",
     "COFFEE": "Drink",
     "CAFE": "Drink",
     "nuuly.com": "Kat spending",
@@ -107,6 +108,8 @@ category_map = {
     "BLACK FOREST BROOKLY": "Drink",
     "BAKERY": "Drink",
     "CIAO GLORIA": "Drink",
+    "CIAO  GLORIA": "Drink",
+    "BITTERSWEET": "Drink",
     "MTA*NYCT PAYGO": "Transportation",
     "CITIBIK": "Transportation",
     "CLAUDE.AI SUBSCRIPTION": "Vince spending",
@@ -130,6 +133,7 @@ category_map = {
 #populate_table(db_name, table_name, category_map.items(), ['keyword VARCHAR PRIMARY KEY', 'category VARCHAR'])
 
 global_category_list = [
+    'Amazon',
     'Amusement',
     'Automotive',
     'Drink',
