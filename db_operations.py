@@ -86,3 +86,20 @@ def recategorize_transaction(conn, transaction_id, new_category, old_category):
         memo_addition += ". Set to NULL by user from {old_category}"
     conn.execute(query, (new_category, memo_addition, memo_addition, transaction_id))
     conn.commit()
+
+def get_latest_month(conn):
+    query = """
+    SELECT DATE_TRUNC('month', MAX("Transaction Date")) AS month
+    FROM consolidated_transactions
+    """
+    return conn.execute(query).fetchone()[0]
+
+def fetch_transactions(conn, category, latest_month):
+    query = """
+    SELECT id, "Transaction Date", Description, Amount
+    FROM consolidated_transactions
+    WHERE Category = ?
+      AND DATE_TRUNC('month', "Transaction Date") = ?
+    ORDER BY id
+    """
+    return query_and_return_df(conn, query, params=(category, latest_month))

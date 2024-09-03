@@ -68,72 +68,91 @@ def dig_into_category(conn):
     
     while True:
         print("\nCategories:")
-        for i, category in enumerate(categories, 1):
-            print(f"{i}. {category}")
-        print(f"{len(categories) + 1}. Back to main menu")
+        print_categories(categories)
 
+        choice = get_user_category_choice(categories)
+        if choice == len(categories) + 1:
+            break
+
+        selected_category = categories[choice - 1]
+        latest_month = db_operations.get_latest_month(conn)
+        df = db_operations.fetch_transactions(conn, selected_category, latest_month)
+
+        if df.empty:
+            print(f"No transactions found for {selected_category} in the latest month.")
+            continue
+
+        print(f"\nTransactions for {selected_category} in the latest month:")
+        print_transactions(df)
+        
+        while get_recategorization_choice() == 'y':
+            transaction_id = get_transaction_id(df)
+            new_category_index = get_new_category(categories)
+            
+            if new_category_index <= len(categories):
+                new_category = categories[new_category_index - 1]
+            else:
+                new_category = None
+
+            db_operations.recategorize_transaction(conn, transaction_id, new_category, selected_category)
+            print(f"Transaction {transaction_id} recategorized to {new_category or 'NULL (Excluded)'}")
+            
+            # Refresh the dataframe
+            df = db_operations.fetch_transactions(conn, selected_category, latest_month)
+            print("\nUpdated transactions:")
+            print_transactions(df)
+
+def print_categories(categories):
+    for i, category in enumerate(categories, 1):
+        print(f"{i}. {category}")
+    print(f"{len(categories) + 1}. Back to main menu")
+
+def get_user_category_choice(categories):
+    while True:
         try:
             choice = int(input("\nChoose a category number to dig into: "))
-            if choice == len(categories) + 1:
-                break
-            if 1 <= choice <= len(categories):
-                selected_category = categories[choice - 1]
-                query = """
-                WITH latest_month AS (
-                    SELECT DATE_TRUNC('month', MAX("Transaction Date")) AS month
-                    FROM consolidated_transactions
-                )
-                SELECT id, "Transaction Date", Description, Amount
-                FROM consolidated_transactions, latest_month
-                WHERE Category = ?
-                  AND DATE_TRUNC('month', "Transaction Date") = latest_month.month
-                ORDER BY id
-                """
-                df = db_operations.query_and_return_df(conn, query, params=(selected_category,))
-                if not df.empty:
-                    print(f"\nTransactions for {selected_category} in the latest month:")
-                    pd.set_option('display.max_rows', None)
-                    pd.set_option('display.max_columns', None)
-                    pd.set_option('display.width', None)
-                    pd.set_option('display.max_colwidth', None)
-                    print(df.to_string(index=False))
-                    
-                    while True:
-                        recategorize = input("\nDo you want to recategorize any transaction? (y/n): ").lower()
-                        if recategorize == 'n':
-                            break
-                        elif recategorize == 'y':
-                            try:
-                                transaction_id = int(input("Enter the ID of the transaction to recategorize: "))
-                                if transaction_id in df['id'].values:
-                                    print("\nAvailable categories:")
-                                    for i, category in enumerate(categories, 1):
-                                        print(f"{i}. {category}")
-                                    print(f"{len(categories) + 1}. Exclude (set category to NULL)")
-                                    new_category_index = int(input("Enter the number of the new category or Exclude option: "))
-                                    if 1 <= new_category_index <= len(categories):
-                                        new_category = categories[new_category_index - 1]
-                                        db_operations.recategorize_transaction(conn, transaction_id, new_category, selected_category)
-                                        print(f"Transaction {transaction_id} recategorized to {new_category}")
-                                    elif new_category_index == len(categories) + 1:
-                                        db_operations.recategorize_transaction(conn, transaction_id, None, selected_category)
-                                        print(f"Transaction {transaction_id} excluded (category set to NULL)")
-                                    else:
-                                        print("Invalid category number.")
-                                    # Refresh the dataframe
-                                    df = db_operations.query_and_return_df(conn, query, params=(selected_category,))
-                                    print("\nUpdated transactions:")
-                                    print(df.to_string(index=False))
-                                else:
-                                    print("Invalid transaction ID.")
-                            except ValueError:
-                                print("Please enter a valid number.")
-                        else:
-                            print("Invalid input. Please enter 'y' or 'n'.")
-                else:
-                    print(f"No transactions found for {selected_category} in the latest month.")
-            else:
-                print("Invalid choice. Please try again.")
+            if 1 <= choice <= len(categories) + 1:
+                return choice
+            print("Invalid choice. Please try again.")
+        except ValueError:
+            print("Please enter a valid number.")
+
+def print_transactions(df):
+    pd.set_option('display.max_rows', None)
+    pd.set_option('display.max_columns', None)
+    pd.set_option('display.width', None)
+    pd.set_option('display.max_colwidth', None)
+    print(df.to_string(index=False))
+
+def get_recategorization_choice():
+    while True:
+        choice = input("\nDo you want to recategorize any transaction? (y/n): ").lower()
+        if choice in ['y', 'n']:
+            return choice
+        print("Invalid input. Please enter 'y' or 'n'.")
+
+def get_transaction_id(df):
+    while True:
+        try:
+            transaction_id = int(input("Enter the ID of the transaction to recategorize: "))
+            if transaction_id in df['id'].values:
+                return transaction_id
+            print("Invalid transaction ID.")
+        except ValueError:
+            print("Please enter a valid number.")
+
+def get_new_category(categories):
+    print("\nAvailable categories:")
+    for i, category in enumerate(categories, 1):
+        print(f"{i}. {category}")
+    print(f"{len(categories) + 1}. Exclude (set category to NULL)")
+    
+    while True:
+        try:
+            choice = int(input("Enter the number of the new category or Exclude option: "))
+            if 1 <= choice <= len(categories) + 1:
+                return choice
+            print("Invalid category number.")
         except ValueError:
             print("Please enter a valid number.")
 
