@@ -63,9 +63,12 @@ def helper_get_new_category(categories):
         except ValueError:
             print("Please enter a valid number.")
 
-def helper_get_transaction_date():
+def helper_get_transaction_date(year, month):
     while True:
-        date_str = input("Enter transaction date (YYYY-MM-DD): ")
+        # ask user for date, but with the year and month already specified in the prompt which the user can change  
+        date_str = input(f"Enter transaction date (YYYY-MM-DD, default is {year}-{month}): ")
+        if date_str == "":
+            return datetime(year, month, 1).date()
         try:
             return datetime.strptime(date_str, "%Y-%m-%d").date()
         except ValueError:
@@ -119,24 +122,45 @@ def print_ascii_title():
 """
     print(ascii_art)
 
-def main_menu(conn):
+def get_user_specified_date():
+    while True:
+        year = input("Enter the year (YYYY): ")
+        month = input("Enter the month (1-12): ")
+        try:
+            year = int(year)
+            month = int(month)
+            if 1 <= month <= 12 and 1900 <= year <= 9999:
+                return year, month
+            else:
+                print("Invalid year or month. Please try again.")
+        except ValueError:
+            print("Invalid input. Please enter numbers only.")
+
+def print_divider(title):
+    print("\n" + "=" * 50)
+    print(title.center(50))
+    print("=" * 50 + "\n")
+
+def main_menu(conn, year, month):
     while True:
         print("\nMain Menu:")
-        print("1. See latest month's spending profile")
+        print(f"Current analysis period: {datetime(year, month, 1).strftime('%B %Y')}")
+        print("1. See spending profile")
         print("2. Dig into a specific category")
-        print("3. See 90th percentile most expensive nonrecurring spendings from the latest month")
+        print("3. See 95th percentile most expensive nonrecurring spendings")
         print("4. Set budget")
         print("5. Add an adjustment transaction")
-        print("6. Exit")
+        print("6. Change analysis period")
+        print("7. Exit")
         
-        choice = input("Enter your choice (1-6): ")
+        choice = input("Enter your choice (1-7): ")
         
         if choice == '1':
-            run_visualize_script()
+            run_visualize_script(year, month)
         elif choice == '2':
-            dig_into_category(conn)
+            dig_into_category(conn, year, month)
         elif choice == '3':
-            df = db_operations.show_p95_expensive_nonrecurring_for_latest_month(conn)
+            df = db_operations.show_p95_expensive_nonrecurring_for_latest_month(conn, year, month)
             if df is None:
                 print("No non-recurring expenses found.")
             else:
@@ -147,28 +171,22 @@ def main_menu(conn):
         elif choice == '4':
             set_budget(conn)
         elif choice == '5':
-            add_adjustment_transaction(conn)
+            add_adjustment_transaction(conn, year, month)
         elif choice == '6':
-            break
+            return True  # Signal to change the analysis period
+        elif choice == '7':
+            return False  # Signal to exit the program
         else:
             print("Invalid choice. Please try again.")
 
-def run_visualize_script():
-    visualize_script = os.path.join(current_dir, "visualize-results.py")
-    
-    if os.path.exists(visualize_script):
-        spec = importlib.util.spec_from_file_location("visualize_results", visualize_script)
-        visualize_module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(visualize_module)
-        
-        if hasattr(visualize_module, 'main'):
-            visualize_module.main()
-        else:
-            print("Error: main() function not found in visualize-results.py")
-    else:
-        print(f"Error: {visualize_script} does not exist")
+def run_visualize_script(year, month):
+    script_path = os.path.join(os.path.dirname(__file__), 'visualize-results.py')
+    spec = importlib.util.spec_from_file_location("visualize_module", script_path)
+    visualize_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(visualize_module)
+    visualize_module.main(year, month)
 
-def dig_into_category(conn):
+def dig_into_category(conn, year, month):
     categories = sorted(db_operations.get_global_categories_from_db(conn))
     
     while True:
@@ -180,14 +198,13 @@ def dig_into_category(conn):
             break
 
         selected_category = categories[choice - 1]
-        latest_month = db_operations.get_latest_month(conn)
-        df = db_operations.fetch_transactions(conn, selected_category, latest_month)
+        df = db_operations.fetch_transactions(conn, selected_category, year, month)
 
         if df.empty:
-            print(f"No transactions found for {selected_category} in the latest month.")
+            print(f"No transactions found for {selected_category} in {datetime(year, month, 1).strftime('%B %Y')}.")
             continue
 
-        print(f"\nTransactions for {selected_category} in the latest month:")
+        print(f"\nTransactions for {selected_category} in {datetime(year, month, 1).strftime('%B %Y')}:")
         helper_print_transactions(df)
         
         while helper_get_recategorization_choice() == 'y':
@@ -203,7 +220,7 @@ def dig_into_category(conn):
             print(f"Transaction {transaction_id} recategorized to {new_category or 'NULL (Excluded)'}")
             
             # Refresh the dataframe
-            df = db_operations.fetch_transactions(conn, selected_category, latest_month)
+            df = db_operations.fetch_transactions(conn, selected_category, year, month)
             print("\nUpdated transactions:")
             helper_print_transactions(df)
 
@@ -240,10 +257,10 @@ def set_budget(conn):
         except ValueError:
             print("Please enter a valid number.")
 
-def add_adjustment_transaction(conn):
+def add_adjustment_transaction(conn, year, month):
     print("\nAdding an adjustment transaction:")
     
-    transaction_date = helper_get_transaction_date()
+    transaction_date = helper_get_transaction_date(year, month)
     description = input("Enter transaction description: ")
     amount = helper_get_transaction_amount()
     category = helper_get_transaction_category(conn)
@@ -258,7 +275,12 @@ if __name__ == "__main__":
     print_ascii_title()
     db_name = 'budgeting-tool.db'
     conn = duckdb.connect(db_name)
-    try:
-        main_menu(conn)
-    finally:
-        conn.close()
+
+    while True:
+        year, month = get_user_specified_date()
+        change_period = main_menu(conn, year, month)
+        if not change_period:
+            break
+
+    conn.close()
+    print("Thank you for using the budgeting tool. Goodbye!")

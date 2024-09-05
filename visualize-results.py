@@ -62,21 +62,19 @@ def get_user_specified_date():
         except ValueError:
             print("Invalid input. Please enter numbers only.")
 
-def main():
+def main(year, month):
     db_name = 'budgeting-tool.db'
-    output_file = 'spending_comparison.png'
 
     conn = duckdb.connect(db_name)
 
-    # Get user-specified year and month
-    year, month = get_user_specified_date()
-
-    # Get the summary for the specified month
+    # Use the provided year and month instead of asking for user input
     df = get_month_summary(conn, year, month)
     
-    # Get the month name and year from the dataframe
+    # Get the month name from the dataframe
     month_name = df['Month'].iloc[0]
-    year = df['Year'].iloc[0]
+    
+    # Update output filename to include month and year
+    output_file = f'spending_comparison_{month_name}_{year}.png'
     
     print_divider(f"Month Summary - {month_name} {year}")
     print(df.drop(columns=['Month', 'Year']))  # Drop Month and Year columns from display
@@ -98,5 +96,4 @@ def main():
     
     webbrowser.open(f'file://{full_path}')
 
-if __name__ == "__main__":
-    main()
+    conn.close()

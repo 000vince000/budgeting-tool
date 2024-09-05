@@ -94,28 +94,28 @@ def get_latest_month(conn):
     """
     return conn.execute(query).fetchone()[0]
 
-def fetch_transactions(conn, category, latest_month):
+def fetch_transactions(conn, category, year, month):
     query = """
-    SELECT id, "Transaction Date", Description, Amount
+    SELECT id, "Transaction Date", Description, Amount, Category
     FROM consolidated_transactions
     WHERE Category = ?
-      AND DATE_TRUNC('month', "Transaction Date") = ?
-    ORDER BY id
+      AND strftime('%Y', "Transaction Date") = ?
+      AND strftime('%m', "Transaction Date") = ?
+    ORDER BY "Transaction Date" DESC
     """
-    return query_and_return_df(conn, query, params=(category, latest_month))
+    return query_and_return_df(conn, query, [category, str(year), str(month).zfill(2)])
 
-def show_p95_expensive_nonrecurring_for_latest_month(conn):
+def show_p95_expensive_nonrecurring_for_latest_month(conn, year, month):
     query = """
-    WITH latest_month AS (
-        SELECT DATE_TRUNC('month', MAX("Transaction Date")) AS month
-        FROM consolidated_transactions
+    WITH specified_month AS (
+        SELECT MAKE_DATE(?, ?, 1) AS month
     ),
     nonrecurring_expenses AS (
         SELECT Description, Amount, "Transaction Date", Category
-        FROM consolidated_transactions, latest_month
+        FROM consolidated_transactions, specified_month
         WHERE Category NOT IN ('Monthly fixed cost', 'Monthly property expense', 'Monthly mortgage expense')
           AND Amount < 0
-          AND DATE_TRUNC('month', "Transaction Date") = latest_month.month
+          AND DATE_TRUNC('month', "Transaction Date") = specified_month.month
     ),
     percentile_calc AS (
         SELECT *, 
@@ -127,7 +127,7 @@ def show_p95_expensive_nonrecurring_for_latest_month(conn):
     WHERE percentile >= 0.95
     ORDER BY Amount ASC
     """
-    df = query_and_return_df(conn, query)
+    df = query_and_return_df(conn, query, [year, month])
     
     if df.empty:
         return None
@@ -145,7 +145,7 @@ def insert_adjustment_transaction(conn, transaction_date, description, amount, c
     conn.commit()
 
 def get_month_summary(conn, year, month):
-    with open('latest-month-summary.sql', 'r') as file:
+    with open('specific-month-summary.sql', 'r') as file:
         query = file.read()
     
     return query_and_return_df(conn, query, [year, month])
