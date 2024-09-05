@@ -1,12 +1,5 @@
-WITH RECURSIVE date_range AS (
-    SELECT DATE_TRUNC('month', MIN("Transaction Date")) AS month
-    FROM consolidated_transactions
-    
-    UNION ALL
-    
-    SELECT DATE_TRUNC('month', month + INTERVAL '1 month')
-    FROM date_range
-    WHERE month < (SELECT DATE_TRUNC('month', MAX("Transaction Date")) FROM consolidated_transactions)
+WITH specified_month AS (
+    SELECT MAKE_DATE(CAST(? AS BIGINT), CAST(? AS BIGINT), CAST(1 AS BIGINT)) AS month
 ),
 categories AS (
     SELECT DISTINCT category
@@ -15,15 +8,11 @@ categories AS (
 ),
 monthly_sums AS (
     SELECT 
-        dr.month,
-        c.category,
-        COALESCE(SUM(ct.amount), 0) AS monthly_total
-    FROM date_range dr
-    CROSS JOIN categories c
-    LEFT JOIN consolidated_transactions ct 
-        ON DATE_TRUNC('month', ct."Transaction Date") = dr.month
-        AND ct.category = c.category
-    GROUP BY dr.month, c.category
+        DATE_TRUNC('month', "Transaction Date") AS month,
+        category,
+        COALESCE(SUM(amount), 0) AS monthly_total
+    FROM consolidated_transactions
+    GROUP BY DATE_TRUNC('month', "Transaction Date"), category
 ),
 category_stats AS (
     SELECT 
@@ -36,31 +25,34 @@ category_stats AS (
     FROM monthly_sums
     GROUP BY category
 ),
-latest_month_sums AS (
+specified_month_sums AS (
     SELECT 
         c.category,
-        COALESCE(ABS(SUM(ct.amount)), 0) AS latest_month_sum
+        COALESCE(ABS(SUM(ct.amount)), 0) AS specified_month_sum
     FROM categories c
     LEFT JOIN consolidated_transactions ct 
         ON c.category = ct.category
-        AND DATE_TRUNC('month', ct."Transaction Date") = (SELECT MAX(DATE_TRUNC('month', "Transaction Date")) FROM consolidated_transactions)
+        AND DATE_TRUNC('month', ct."Transaction Date") = (SELECT month FROM specified_month)
     GROUP BY c.category
 )
 SELECT 
+    strftime('%B', sm.month) AS Month,
+    strftime('%Y', sm.month) AS Year,
     cs.*,
     CASE 
         WHEN cs.avg_monthly_sum = 0 THEN NULL
         ELSE ROUND((cs.stddev_monthly_sum / cs.avg_monthly_sum) * 100, 2)
     END AS avg_percent_variance,
-    ROUND(COALESCE(lms.latest_month_sum, 0), 2) AS latest_month_sum,
+    ROUND(COALESCE(sms.specified_month_sum, 0), 2) AS specified_month_sum,
     cb.budget,
     CASE
         WHEN cb.budget IS NULL THEN ''
-        WHEN lms.latest_month_sum < cb.budget THEN 'Under budget by $' || (cb.budget - lms.latest_month_sum)::INT::TEXT
-        WHEN lms.latest_month_sum > cb.budget THEN 'Over budget by $' || (lms.latest_month_sum - cb.budget)::INT::TEXT
+        WHEN sms.specified_month_sum < cb.budget THEN 'Under budget by $' || (cb.budget - sms.specified_month_sum)::INT::TEXT
+        WHEN sms.specified_month_sum > cb.budget THEN 'Over budget by $' || (sms.specified_month_sum - cb.budget)::INT::TEXT
         ELSE 'On budget'
     END AS budget_status
 FROM category_stats cs
-LEFT JOIN latest_month_sums lms ON cs.category = lms.category
+LEFT JOIN specified_month_sums sms ON cs.category = sms.category
 LEFT JOIN current_budgets cb ON cs.category = cb.category
-ORDER BY ROUND(COALESCE(lms.latest_month_sum, 0), 2) ASC;
+CROSS JOIN specified_month sm
+ORDER BY ROUND(COALESCE(sms.specified_month_sum, 0), 2) DESC;
