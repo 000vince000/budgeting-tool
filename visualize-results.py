@@ -3,7 +3,7 @@ import pandas as pd
 import duckdb
 import matplotlib.pyplot as plt
 import webbrowser
-from db_operations import query_and_return_df
+from db_operations import query_and_return_df, get_month_summary
 import math
 
 def print_divider(title):
@@ -16,14 +16,13 @@ def create_plot(df):
     x = range(len(df))
     width = 0.6
 
-    bars = plt.bar(x, df['latest_month_sum'], width, label='Latest Month Sum', color='skyblue', alpha=0.7)
-    #plt.scatter(x, df['avg_monthly_sum'], color='red', marker='o', s=50, label='Average')
+    bars = plt.bar(x, df['specified_month_sum'], width, label='Specified Month Sum', color='skyblue', alpha=0.7)
     plt.scatter(x, df['p50_monthly_sum'], color='green', marker='s', s=50, label='P50')
     plt.scatter(x, df['p85_monthly_sum'], color='purple', marker='^', s=50, label='P85')
 
     plt.xlabel('Category')
     plt.ylabel('Amount')
-    plt.title('Latest Month Sum with P50 and P85 Markers')
+    plt.title('Specified Month Sum with P50 and P85 Markers')
     plt.xticks(x, df['Category'], rotation=45, ha='right')
     plt.legend()
     plt.tight_layout()
@@ -38,8 +37,8 @@ def create_plot(df):
 
 def calculate_net_income(df):
     income_categories = ['Salary', 'Rental income']
-    income = df[df['Category'].isin(income_categories)]['latest_month_sum'].sum()
-    expenses = df[~df['Category'].isin(income_categories)]['latest_month_sum'].sum()
+    income = df[df['Category'].isin(income_categories)]['specified_month_sum'].sum()
+    expenses = df[~df['Category'].isin(income_categories)]['specified_month_sum'].sum()
     net_income = income - expenses
     
     print_divider("Income and Expense Summary")
@@ -49,23 +48,43 @@ def calculate_net_income(df):
 
     return net_income
 
+def get_user_specified_date():
+    while True:
+        year = input("Enter the year (YYYY): ")
+        month = input("Enter the month (1-12): ")
+        try:
+            year = int(year)
+            month = int(month)
+            if 1 <= month <= 12 and 1900 <= year <= 9999:
+                return year, month
+            else:
+                print("Invalid year or month. Please try again.")
+        except ValueError:
+            print("Invalid input. Please enter numbers only.")
+
 def main():
     db_name = 'budgeting-tool.db'
     output_file = 'spending_comparison.png'
 
-    with open('latest-month-summary.sql', 'r') as file:
-        query = file.read()
-
     conn = duckdb.connect(db_name)
-    df = query_and_return_df(conn, query)
+
+    # Get user-specified year and month
+    year, month = get_user_specified_date()
+
+    # Get the summary for the specified month
+    df = get_month_summary(conn, year, month)
     
-    print_divider("Latest Month Summary")
-    print(df)
+    # Get the month name and year from the dataframe
+    month_name = df['Month'].iloc[0]
+    year = df['Year'].iloc[0]
+    
+    print_divider(f"Month Summary - {month_name} {year}")
+    print(df.drop(columns=['Month', 'Year']))  # Drop Month and Year columns from display
 
     net_income = calculate_net_income(df)
 
     excluded_categories = ['Salary', 'Rental income']
-    df_filtered = df[~df['Category'].isin(excluded_categories)].sort_values('latest_month_sum', ascending=False)
+    df_filtered = df[~df['Category'].isin(excluded_categories)].sort_values('specified_month_sum', ascending=False)
 
     create_plot(df_filtered)
 
