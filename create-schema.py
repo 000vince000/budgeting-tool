@@ -71,19 +71,36 @@ def create_current_budgets_view(conn):
         print(f"An error occurred while creating the current_budgets view: {str(e)}")
         raise
 
+def create_schema_menu(conn):
+    while True:
+        print("\nCreate Schema Menu:")
+        print("1. Create consolidated_transactions table")
+        print("2. Create category_budgets table")
+        print("3. Create current_budgets view")
+        print("4. Exit")
+        
+        choice = input("Enter your choice (1-4): ")
+        
+        if choice == '1':
+            create_table_consolidated_transactions(conn)
+        elif choice == '2':
+            create_table_category_budgets(conn)
+        elif choice == '3':
+            create_current_budgets_view(conn)
+        elif choice == '4':
+            break
+        else:
+            print("Invalid choice. Please try again.")
+
 if __name__ == "__main__":
     db_name = 'budgeting-tool.db'
     
     try:
         conn = duckdb.connect(db_name)
-        create_table_consolidated_transactions(conn)
-        create_table_category_budgets(conn)
-        create_current_budgets_view(conn)
-        conn.commit()
-        print("All operations completed successfully")
+        create_schema_menu(conn)
+        print("Schema creation completed.")
     except Exception as e:
         print(f"An error occurred: {str(e)}")
-        conn.rollback()
     finally:
         if 'conn' in locals():
             conn.close()
