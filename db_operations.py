@@ -7,12 +7,11 @@ def get_db_connection(db_name):
     return conn
 
 def query_and_return_df(conn, query_statement, params=None):
-    print(query_statement)
     if params:
-        df = conn.execute(query_statement, params).fetchdf()
+        result = conn.execute(query_statement, params)
     else:
-        df = conn.execute(query_statement).fetchdf()
-    return df
+        result = conn.execute(query_statement)
+    return result.df()
 
 def get_category_mapping_from_db(conn):
     query = """
@@ -144,3 +143,9 @@ def insert_adjustment_transaction(conn, transaction_date, description, amount, c
     """
     conn.execute(query, (transaction_date, description, amount, category))
     conn.commit()
+
+def get_month_summary(conn, year, month):
+    with open('latest-month-summary.sql', 'r') as file:
+        query = file.read()
+    
+    return query_and_return_df(conn, query, [year, month])
