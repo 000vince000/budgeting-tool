@@ -136,3 +136,11 @@ def show_p95_expensive_nonrecurring_for_latest_month(conn):
         df['Amount'] = df['Amount'].abs()  # Convert to positive for display
         df = df.sort_values('Amount', ascending=False)  # Sort by Amount in descending order        
         return df
+
+def insert_adjustment_transaction(conn, transaction_date, description, amount, category):
+    query = """
+    INSERT INTO consolidated_transactions ("Transaction Date", Description, Amount, Category)
+    VALUES (?, ?, ?, ?)
+    """
+    conn.execute(query, (transaction_date, description, amount, category))
+    conn.commit()
