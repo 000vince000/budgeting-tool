@@ -130,7 +130,7 @@ category_map = {
     "Google Storage": "Vince spending",
     "Patreon": "Vince spending"
 }
-#populate_table(db_name, table_name, category_map.items(), ['keyword VARCHAR PRIMARY KEY', 'category VARCHAR'])
+populate_table(db_name, table_name, category_map.items(), ['keyword VARCHAR PRIMARY KEY', 'category VARCHAR'])
 
 global_category_list = [
     'Amazon',
