@@ -71,15 +71,33 @@ def create_current_budgets_view(conn):
         print(f"An error occurred while creating the current_budgets view: {str(e)}")
         raise
 
+def create_table_vendor_category_mapping(conn):
+    try:
+        # Create table
+        create_table_query = """
+        CREATE TABLE IF NOT EXISTS vendor_category_mapping (
+            vendor VARCHAR PRIMARY KEY,
+            category VARCHAR,
+            FOREIGN KEY (category) REFERENCES categories(category)
+        )
+        """
+        conn.execute(create_table_query)
+        print("Table vendor_category_mapping created successfully")
+
+    except Exception as e:
+        print(f"An error occurred while creating vendor_category_mapping: {str(e)}")
+        raise
+
 def create_schema_menu(conn):
     while True:
         print("\nCreate Schema Menu:")
         print("1. Create consolidated_transactions table")
         print("2. Create category_budgets table")
         print("3. Create current_budgets view")
-        print("4. Exit")
+        print("4. Create vendor_category_mapping table")
+        print("5. Exit")
         
-        choice = input("Enter your choice (1-4): ")
+        choice = input("Enter your choice (1-5): ")
         
         if choice == '1':
             create_table_consolidated_transactions(conn)
@@ -88,6 +106,8 @@ def create_schema_menu(conn):
         elif choice == '3':
             create_current_budgets_view(conn)
         elif choice == '4':
+            create_table_vendor_category_mapping(conn)
+        elif choice == '5':
             break
         else:
             print("Invalid choice. Please try again.")
