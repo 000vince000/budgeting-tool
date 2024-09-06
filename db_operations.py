@@ -152,24 +152,19 @@ def get_month_summary(conn, year, month):
     return query_and_return_df(conn, query, [year, month])
 
 def insert_vendor_category_mapping(conn, vendor, category):
-    try:
-        # Insert the mapping
-        insert_query = """
-        INSERT INTO vendor_category_mapping (vendor, category)
-        VALUES (?, ?)
-        ON CONFLICT (vendor) DO UPDATE SET category = EXCLUDED.category
-        """
-        conn.execute(insert_query, [vendor, category])
-        conn.commit()
-        print(f"Vendor '{vendor}' successfully mapped to category '{category}'")
-    except duckdb.ConstraintException as ce:
-        print(f"Constraint violation: {str(ce)}")
-        conn.rollback()
-    except ValueError as ve:
-        print(str(ve))
-    except Exception as e:
-        print(f"An error occurred while inserting vendor-category mapping: {str(e)}")
-        conn.rollback()
+    # Remove the transaction handling from this function
+    category_check_query = "SELECT COUNT(*) FROM categories WHERE category = ?"
+    result = conn.execute(category_check_query, [category]).fetchone()
+    if result[0] == 0:
+        raise ValueError(f"Category '{category}' does not exist in the categories table.")
+
+    print(f"DEBUG: Inserting vendor-category mapping: '{vendor}' -> '{category}'")
+    insert_query = """
+    INSERT INTO vendor_category_mapping (vendor, category)
+    VALUES (?, ?)
+    """
+    conn.execute(insert_query, [vendor, category])
+    print(f"Vendor '{vendor}' successfully mapped to category '{category}'")
 
 def get_transactions_by_vendor(conn, vendor):
     query = """
@@ -185,41 +180,49 @@ def get_transactions_by_vendor(conn, vendor):
     return query_and_return_df(conn, query, [vendor_pattern])
 
 def recategorize_transactions(conn, transaction_ids, new_category):
+    # Remove the transaction handling from this function
+    query = """
+    UPDATE consolidated_transactions
+    SET Category = ?,
+        Memo = CASE
+            WHEN Memo IS NULL OR Memo = '' THEN ?
+            ELSE Memo || ?
+        END
+    WHERE id = ?
+    """
+
+    for transaction_id in transaction_ids:
+        old_category_query = "SELECT Category FROM consolidated_transactions WHERE id = ?"
+        old_category = conn.execute(old_category_query, [transaction_id]).fetchone()[0]
+
+        memo_addition = f". Recategorized by user from {old_category}"
+        if new_category is None:
+            memo_addition += f". Set to NULL by user from {old_category}"
+
+        conn.execute(query, (new_category, memo_addition, memo_addition, transaction_id))
+
+    print(f"Successfully recategorized {len(transaction_ids)} transactions to '{new_category}'")
+
+def get_vendor_category_mapping(conn, vendor):
+    """
+    Retrieve the category mapping for a given vendor.
+
+    Args:
+    conn (duckdb.DuckDBPyConnection): The database connection.
+    vendor (str): The vendor name to look up.
+
+    Returns:
+    str or None: The category associated with the vendor, or None if no mapping exists.
+    """
     try:
-        # Start a transaction
-        conn.execute("BEGIN TRANSACTION")
-
-        # Prepare the update query
         query = """
-        UPDATE consolidated_transactions
-        SET Category = ?,
-            Memo = CASE
-                WHEN Memo IS NULL OR Memo = '' THEN ?
-                ELSE Memo || ?
-            END
-        WHERE id = ?
+        SELECT category 
+        FROM vendor_category_mapping 
+        WHERE vendor = ?
         """
-
-        # Execute the update for each transaction ID
-        for transaction_id in transaction_ids:
-            # Get the old category
-            old_category_query = "SELECT Category FROM consolidated_transactions WHERE id = ?"
-            old_category = conn.execute(old_category_query, [transaction_id]).fetchone()[0]
-
-            # Prepare the memo addition
-            memo_addition = f". Recategorized by user from {old_category}"
-            if new_category is None:
-                memo_addition += f". Set to NULL by user from {old_category}"
-
-            # Execute the update
-            conn.execute(query, (new_category, memo_addition, memo_addition, transaction_id))
-
-        # Commit the transaction
-        conn.commit()
-        print(f"Successfully recategorized {len(transaction_ids)} transactions to '{new_category}'")
-
+        result = conn.execute(query, [vendor]).fetchone()
+        return result[0] if result else None
     except Exception as e:
-        # If an error occurs, roll back the transaction
-        conn.rollback()
-        print(f"An error occurred while recategorizing transactions: {str(e)}")
-        raise
+        print(f"An error occurred while retrieving vendor-category mapping: {str(e)}")
+        return None
+
