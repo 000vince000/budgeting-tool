@@ -136,7 +136,7 @@ def get_user_specified_date():
         except ValueError:
             print("Invalid input. Please enter numbers only.")
 
-def print_divider(title):
+def helper_print_divider(title):
     print("\n" + "=" * 50)
     print(title.center(50))
     print("=" * 50 + "\n")
@@ -216,9 +216,48 @@ def dig_into_category(conn, year, month):
             else:
                 new_category = None
 
-            db_operations.recategorize_transaction(conn, transaction_id, new_category, selected_category)
-            print(f"Transaction {transaction_id} recategorized to {new_category or 'NULL (Excluded)'}")
-            
+            # Get the transaction details
+            transaction = df[df['id'] == transaction_id].iloc[0]
+            vendor = transaction['Description']
+
+            apply_to_all = input(f"Do you want to apply this categorization to all transactions from '{vendor}'? (y/n): ").lower() == 'y'
+
+            if apply_to_all:
+                try:
+                    # Start transaction
+                    conn.execute("BEGIN TRANSACTION")
+
+                    # Get all transaction IDs for this vendor
+                    all_transactions = db_operations.get_transactions_by_vendor(conn, vendor)
+                    transaction_ids = all_transactions['id'].tolist()
+
+                    print(f"DEBUG: Recategorizing transactions to '{new_category}'")
+                    db_operations.recategorize_transactions(conn, transaction_ids, new_category)
+
+                    print("DEBUG: Checking existing vendor-category mapping")
+                    existing_mapping = db_operations.get_vendor_category_mapping(conn, vendor)
+                    if existing_mapping != new_category:
+                        if new_category is not None:
+                            print(f"DEBUG: Inserting new vendor-category mapping: '{vendor}' -> '{new_category}'")
+                            db_operations.insert_vendor_category_mapping(conn, vendor, new_category)
+                        else:
+                            # noop
+                            pass
+                    else:
+                        print(f"Vendor-category mapping already exists: '{vendor}' -> '{new_category}'")
+
+                    print("DEBUG: Committing transaction")
+                    conn.commit()
+                    print(f"All transactions from '{vendor}' have been recategorized to '{new_category or 'NULL (Excluded)'}'")
+                except Exception as e:
+                    print(f"DEBUG: Error occurred: {str(e)}")
+                    conn.rollback()
+                    print("An error occurred. All operations have been rolled back.")
+            else:
+                # Recategorize only the selected transaction
+                db_operations.recategorize_transaction(conn, transaction_id, new_category, selected_category)
+                print(f"Transaction {transaction_id} recategorized to {new_category or 'NULL (Excluded)'}")
+
             # Refresh the dataframe
             df = db_operations.fetch_transactions(conn, selected_category, year, month)
             print("\nUpdated transactions:")
@@ -260,7 +299,7 @@ def set_budget(conn):
 def add_adjustment_transaction(conn, year, month):
     print("\nAdding an adjustment transaction:")
     
-    transaction_date = helper_get_transaction_date(year, month)
+    transaction_date = datetime(year, month, 1).date()
     description = input("Enter transaction description: ")
     amount = helper_get_transaction_amount()
     category = helper_get_transaction_category(conn)
