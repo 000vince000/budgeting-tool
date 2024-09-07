@@ -5,101 +5,42 @@ import duckdb
 import pandas as pd
 from datetime import datetime
 
-# Get the directory of the current script
-current_dir = os.path.dirname(os.path.abspath(__file__))
-
 # Helper functions
-def helper_print_categories(categories):
-    for i, category in enumerate(categories, 1):
-        print(f"{i}. {category}")
-    print(f"{len(categories) + 1}. Back to main menu")
+def print_numbered_list(items, start=1):
+    for i, item in enumerate(items, start):
+        print(f"{i}. {item}")
 
-def helper_get_user_category_choice(categories):
+def get_user_choice(prompt, valid_range):
     while True:
         try:
-            choice = int(input("\nChoose a category number to dig into: "))
-            if 1 <= choice <= len(categories) + 1:
+            choice = int(input(prompt))
+            if choice in valid_range:
                 return choice
             print("Invalid choice. Please try again.")
         except ValueError:
             print("Please enter a valid number.")
 
-def helper_print_transactions(df):
+def get_user_input(prompt, input_type=str, validation_func=None):
+    while True:
+        try:
+            user_input = input_type(input(prompt))
+            if validation_func is None or validation_func(user_input):
+                return user_input
+            print("Invalid input. Please try again.")
+        except ValueError:
+            print(f"Please enter a valid {input_type.__name__}.")
+
+def print_dataframe(df):
     pd.set_option('display.max_rows', None)
     pd.set_option('display.max_columns', None)
     pd.set_option('display.width', None)
     pd.set_option('display.max_colwidth', None)
     print(df.to_string(index=False))
 
-def helper_get_recategorization_choice():
-    while True:
-        choice = input("\nDo you want to recategorize any transaction? (y/n): ").lower()
-        if choice in ['y', 'n']:
-            return choice
-        print("Invalid input. Please enter 'y' or 'n'.")
-
-def helper_get_transaction_id(df):
-    while True:
-        try:
-            transaction_id = int(input("Enter the ID of the transaction to recategorize: "))
-            if transaction_id in df['id'].values:
-                return transaction_id
-            print("Invalid transaction ID.")
-        except ValueError:
-            print("Please enter a valid number.")
-
-def helper_get_new_category(categories):
-    print("\nAvailable categories:")
-    for i, category in enumerate(categories, 1):
-        print(f"{i}. {category}")
-    print(f"{len(categories) + 1}. Exclude (set category to NULL)")
-    
-    while True:
-        try:
-            choice = int(input("Enter the number of the new category or Exclude option: "))
-            if 1 <= choice <= len(categories) + 1:
-                return choice
-            print("Invalid category number.")
-        except ValueError:
-            print("Please enter a valid number.")
-
-def helper_get_transaction_date(year, month):
-    while True:
-        # ask user for date, but with the year and month already specified in the prompt which the user can change  
-        date_str = input(f"Enter transaction date (YYYY-MM-DD, default is {year}-{month}): ")
-        if date_str == "":
-            return datetime(year, month, 1).date()
-        try:
-            return datetime.strptime(date_str, "%Y-%m-%d").date()
-        except ValueError:
-            print("Invalid date format. Please use YYYY-MM-DD.")
-
-def helper_get_transaction_amount():
-    while True:
-        amount_str = input("Enter amount (negative for expense, positive for income): ")
-        try:
-            return float(amount_str)
-        except ValueError:
-            print("Invalid amount. Please enter a number.")
-
-def helper_get_transaction_category(conn):
-    categories = sorted(db_operations.get_global_categories_from_db(conn))
-    print("\nCategories:")
-    for i, category in enumerate(categories, 1):
-        print(f"{i}. {category}")
-    print(f"{len(categories) + 1}. Other")
-    
-    while True:
-        try:
-            category_choice = int(input("Choose a category number: "))
-            if 1 <= category_choice <= len(categories):
-                return categories[category_choice - 1]
-            elif category_choice == len(categories) + 1:
-                return input("Enter custom category: ")
-            else:
-                print("Invalid choice. Please try again.")
-        except ValueError:
-            print("Please enter a valid number.")
+def print_divider(title):
+    print("\n" + "=" * 50)
+    print(title.center(50))
+    print("=" * 50 + "\n")
 
 # Main functions
 def print_ascii_title():
@@ -123,61 +64,9 @@ def print_ascii_title():
     print(ascii_art)
 
 def get_user_specified_date():
-    while True:
-        year = input("Enter the year (YYYY): ")
-        month = input("Enter the month (1-12): ")
-        try:
-            year = int(year)
-            month = int(month)
-            if 1 <= month <= 12 and 1900 <= year <= 9999:
-                return year, month
-            else:
-                print("Invalid year or month. Please try again.")
-        except ValueError:
-            print("Invalid input. Please enter numbers only.")
-
-def helper_print_divider(title):
-    print("\n" + "=" * 50)
-    print(title.center(50))
-    print("=" * 50 + "\n")
-
-def main_menu(conn, year, month):
-    while True:
-        print("\nMain Menu:")
-        print(f"Current analysis period: {datetime(year, month, 1).strftime('%B %Y')}")
-        print("1. See spending profile")
-        print("2. Dig into a specific category")
-        print("3. See 95th percentile most expensive nonrecurring spendings")
-        print("4. Set budget")
-        print("5. Add an adjustment transaction")
-        print("6. Change analysis period")
-        print("7. Exit")
-        
-        choice = input("Enter your choice (1-7): ")
-        
-        if choice == '1':
-            run_visualize_script(year, month)
-        elif choice == '2':
-            dig_into_category(conn, year, month)
-        elif choice == '3':
-            df = db_operations.show_p95_expensive_nonrecurring_for_latest_month(conn, year, month)
-            if df is None:
-                print("No non-recurring expenses found.")
-            else:
-                print("\n95th percentile most expensive non-recurring spendings:")
-                print(df.to_string(index=False))
-                total = df['Amount'].sum()
-                print(f"Total ........................... ${total:.2f}")
-        elif choice == '4':
-            set_budget(conn)
-        elif choice == '5':
-            add_adjustment_transaction(conn, year, month)
-        elif choice == '6':
-            return True  # Signal to change the analysis period
-        elif choice == '7':
-            return False  # Signal to exit the program
-        else:
-            print("Invalid choice. Please try again.")
+    year = get_user_input("Enter the year (YYYY): ", int, lambda x: 1900 <= x <= 9999)
+    month = get_user_input("Enter the month (1-12): ", int, lambda x: 1 <= x <= 12)
+    return year, month
 
 def run_visualize_script(year, month):
     script_path = os.path.join(os.path.dirname(__file__), 'visualize-results.py')
@@ -191,9 +80,9 @@ def dig_into_category(conn, year, month):
     
     while True:
         print("\nCategories:")
-        helper_print_categories(categories)
+        print_numbered_list(categories + ["Back to main menu"])
 
-        choice = helper_get_user_category_choice(categories)
+        choice = get_user_choice("\nChoose a category number to dig into: ", range(1, len(categories) + 2))
         if choice == len(categories) + 1:
             break
 
@@ -205,110 +94,137 @@ def dig_into_category(conn, year, month):
             continue
 
         print(f"\nTransactions for {selected_category} in {datetime(year, month, 1).strftime('%B %Y')}:")
-        helper_print_transactions(df)
+        print_dataframe(df)
         
-        while helper_get_recategorization_choice() == 'y':
-            transaction_id = helper_get_transaction_id(df)
-            new_category_index = helper_get_new_category(categories)
-            
-            if new_category_index <= len(categories):
-                new_category = categories[new_category_index - 1]
-            else:
-                new_category = None
-
-            # Get the transaction details
-            transaction = df[df['id'] == transaction_id].iloc[0]
-            vendor = transaction['Description']
-
-            apply_to_all = input(f"Do you want to apply this categorization to all transactions from '{vendor}'? (y/n): ").lower() == 'y'
-
-            if apply_to_all:
-                try:
-                    # Start transaction
-                    conn.execute("BEGIN TRANSACTION")
-
-                    # Get all transaction IDs for this vendor
-                    all_transactions = db_operations.get_transactions_by_vendor(conn, vendor)
-                    transaction_ids = all_transactions['id'].tolist()
-
-                    print(f"DEBUG: Recategorizing transactions to '{new_category}'")
-                    db_operations.recategorize_transactions(conn, transaction_ids, new_category)
-
-                    print("DEBUG: Checking existing vendor-category mapping")
-                    existing_mapping = db_operations.get_vendor_category_mapping(conn, vendor)
-                    if existing_mapping != new_category:
-                        if new_category is not None:
-                            print(f"DEBUG: Inserting new vendor-category mapping: '{vendor}' -> '{new_category}'")
-                            db_operations.insert_vendor_category_mapping(conn, vendor, new_category)
-                        else:
-                            # noop
-                            pass
-                    else:
-                        print(f"Vendor-category mapping already exists: '{vendor}' -> '{new_category}'")
-
-                    print("DEBUG: Committing transaction")
-                    conn.commit()
-                    print(f"All transactions from '{vendor}' have been recategorized to '{new_category or 'NULL (Excluded)'}'")
-                except Exception as e:
-                    print(f"DEBUG: Error occurred: {str(e)}")
-                    conn.rollback()
-                    print("An error occurred. All operations have been rolled back.")
-            else:
-                # Recategorize only the selected transaction
-                db_operations.recategorize_transaction(conn, transaction_id, new_category, selected_category)
-                print(f"Transaction {transaction_id} recategorized to {new_category or 'NULL (Excluded)'}")
-
-            # Refresh the dataframe
+        while get_user_input("\nDo you want to recategorize any transaction? (y/n): ", str, lambda x: x.lower() in ['y', 'n']).lower() == 'y':
+            recategorize_transaction(conn, df, categories, selected_category)
             df = db_operations.fetch_transactions(conn, selected_category, year, month)
             print("\nUpdated transactions:")
-            helper_print_transactions(df)
+            print_dataframe(df)
+
+def recategorize_transaction(conn, df, categories, selected_category):
+    transaction_id = get_user_input("Enter the ID of the transaction to recategorize: ", int, lambda x: x in df['id'].values)
+    new_category_index = get_user_choice("\nEnter the number of the new category or Exclude option: ", range(1, len(categories) + 2))
+    
+    new_category = categories[new_category_index - 1] if new_category_index <= len(categories) else None
+    transaction = df[df['id'] == transaction_id].iloc[0]
+    vendor = transaction['Description']
+
+    if get_user_input(f"Do you want to apply this categorization to all transactions from '{vendor}'? (y/n): ", str, lambda x: x.lower() in ['y', 'n']).lower() == 'y':
+        recategorize_all_vendor_transactions(conn, vendor, new_category)
+    else:
+        db_operations.recategorize_transaction(conn, transaction_id, new_category, selected_category)
+        print(f"Transaction {transaction_id} recategorized to {new_category or 'NULL (Excluded)'}")
+
+def recategorize_all_vendor_transactions(conn, vendor, new_category):
+    try:
+        conn.execute("BEGIN TRANSACTION")
+        all_transactions = db_operations.get_transactions_by_vendor(conn, vendor)
+        transaction_ids = all_transactions['id'].tolist()
+        db_operations.recategorize_transactions(conn, transaction_ids, new_category)
+        
+        existing_mapping = db_operations.get_vendor_category_mapping(conn, vendor)
+        if existing_mapping != new_category:
+            if new_category is not None:
+                db_operations.insert_vendor_category_mapping(conn, vendor, new_category)
+                print(f"Vendor-category mapping added: '{vendor}' -> '{new_category}'")
+            else:
+                db_operations.delete_vendor_category_mapping(conn, vendor)
+                print(f"Vendor-category mapping removed for '{vendor}'")
+        
+        conn.commit()
+        print(f"All transactions from '{vendor}' have been recategorized to '{new_category or 'NULL (Excluded)'}'")
+    except Exception as e:
+        conn.rollback()
+        print(f"An error occurred. All operations have been rolled back. Error: {str(e)}")
 
 def set_budget(conn):
     categories = sorted(db_operations.get_global_categories_from_db(conn))
     
     while True:
         print("\nCategories:")
-        for i, category in enumerate(categories, 1):
-            print(f"{i}. {category}")
-        print(f"{len(categories) + 1}. Back to main menu")
+        print_numbered_list(categories + ["Back to main menu"])
 
+        choice = get_user_choice("\nChoose a category number to set budget: ", range(1, len(categories) + 2))
+        if choice == len(categories) + 1:
+            break
+
+        selected_category = categories[choice - 1]
+        amount = get_user_input(f"Enter budget for {selected_category}: $", float)
+        
         try:
-            choice = int(input("\nChoose a category number to set budget: "))
-            if choice == len(categories) + 1:
-                break
-            if 1 <= choice <= len(categories):
-                selected_category = categories[choice - 1]
-                while True:
-                    try:
-                        amount = float(input(f"Enter budget for {selected_category}: $"))
-                        db_operations.insert_category_budget(conn, selected_category, int(amount))
-                        print(f"Budget for {selected_category} set to ${amount:.2f}")
-                        query = "SELECT * FROM current_budgets"
-                        df = db_operations.query_and_return_df(conn, query)
-                        print(df)
-                        break
-                    except ValueError:
-                        print("Please enter a valid number.")
-                    except Exception as e:
-                        print(f"An error occurred: {str(e)}")
-            else:
-                print("Invalid choice. Please try again.")
-        except ValueError:
-            print("Please enter a valid number.")
+            db_operations.insert_category_budget(conn, selected_category, int(amount))
+            print(f"Budget for {selected_category} set to ${amount:.2f}")
+            query = "SELECT * FROM current_budgets"
+            df = db_operations.query_and_return_df(conn, query)
+            print(df)
+        except Exception as e:
+            print(f"An error occurred: {str(e)}")
 
 def add_adjustment_transaction(conn, year, month):
     print("\nAdding an adjustment transaction:")
     
     transaction_date = datetime(year, month, 1).date()
     description = input("Enter transaction description: ")
-    amount = helper_get_transaction_amount()
-    category = helper_get_transaction_category(conn)
+    amount = get_user_input("Enter amount (negative for expense, positive for income): ", float)
+    categories = sorted(db_operations.get_global_categories_from_db(conn))
+    print("\nCategories:")
+    print_numbered_list(categories + ["Other"])
+    
+    category_choice = get_user_choice("Choose a category number: ", range(1, len(categories) + 2))
+    if category_choice <= len(categories):
+        category = categories[category_choice - 1]
+    else:
+        category = input("Enter custom category: ")
     
     try:
         db_operations.insert_adjustment_transaction(conn, transaction_date, description, amount, category)
         print("Adjustment transaction added successfully.")
     except Exception as e:
         print(f"Error adding transaction: {str(e)}")
+
+def main_menu(conn, year, month):
+    menu_options = [
+        "See spending profile",
+        "Dig into a specific category",
+        "See 95th percentile most expensive nonrecurring spendings",
+        "Set budget",
+        "Add an adjustment transaction",
+        "Change analysis period",
+        "Exit"
+    ]
+
+    while True:
+        print("\nMain Menu:")
+        print(f"Current analysis period: {datetime(year, month, 1).strftime('%B %Y')}")
+        print_numbered_list(menu_options)
+        
+        choice = get_user_choice("Enter your choice: ", range(1, len(menu_options) + 1))
+        
+        if choice == 1:
+            run_visualize_script(year, month)
+        elif choice == 2:
+            dig_into_category(conn, year, month)
+        elif choice == 3:
+            show_p95_expensive_nonrecurring(conn, year, month)
+        elif choice == 4:
+            set_budget(conn)
+        elif choice == 5:
+            add_adjustment_transaction(conn, year, month)
+        elif choice == 6:
+            return True  # Signal to change the analysis period
+        elif choice == 7:
+            return False  # Signal to exit the program
+
+def show_p95_expensive_nonrecurring(conn, year, month):
+    df = db_operations.show_p95_expensive_nonrecurring_for_latest_month(conn, year, month)
+    if df is None:
+        print("No non-recurring expenses found.")
+    else:
+        print("\n95th percentile most expensive non-recurring spendings:")
+        print_dataframe(df)
+        total = df['Amount'].sum()
+        print(f"Total ........................... ${total:.2f}")
 
 if __name__ == "__main__":
     print_ascii_title()
