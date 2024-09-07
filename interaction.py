@@ -3,7 +3,10 @@ import os
 import importlib.util
 import duckdb
 import pandas as pd
-from datetime import datetime
+import json
+from decimal import Decimal
+from datetime import datetime, date
+from dateutil.relativedelta import relativedelta
 
 # Helper functions
 def print_numbered_list(items, start=1):
@@ -183,6 +186,101 @@ def add_adjustment_transaction(conn, year, month):
     except Exception as e:
         print(f"Error adding transaction: {str(e)}")
 
+def set_goals(conn):
+    print("\nSetting a new goal for investment, savings, and other categories:")
+    description = input("Enter a description for this goal: ")
+    
+    breakdown = {}
+    remaining_percentage = Decimal('100')
+
+    # Ask for investment percentage, but ask user to input an integer
+    investment_percentage = get_user_input("Enter an integer as percentage for investment (0-100%): ", Decimal, lambda x: 0 <= x <= remaining_percentage)
+    if investment_percentage > 0:
+        breakdown['Investment'] = investment_percentage/100
+        remaining_percentage -= investment_percentage
+
+    # Ask for savings percentage
+    if remaining_percentage > 0:
+        savings_percentage = get_user_input(f"Enter an integer as percentage for savings (0-{remaining_percentage}%): ", Decimal, lambda x: 0 <= x <= remaining_percentage)
+        if savings_percentage > 0:
+            breakdown['Savings'] = savings_percentage/100
+            remaining_percentage -= savings_percentage
+
+    # Get existing categories
+    categories = sorted(db_operations.get_global_categories_from_db(conn))
+
+    # Ask for existing categories and custom categories
+    while remaining_percentage > 0:
+        print(f"\nRemaining percentage: {remaining_percentage}%")
+        print("Choose a category or enter a custom category:")
+        print_numbered_list(categories + ["Enter custom category", "Finish"])
+        
+        choice = get_user_choice("Enter your choice: ", range(1, len(categories) + 3))
+        
+        if choice == len(categories) + 2:  # Finish
+            break
+        elif choice == len(categories) + 1:  # Custom category
+            category = input("Enter custom category name: ")
+        else:
+            category = categories[choice - 1]
+        
+        percentage = get_user_input(f"Enter an integer as percentage for {category} (0-{remaining_percentage}%): ", Decimal, lambda x: 0 <= x <= remaining_percentage)
+        if percentage > 0:
+            breakdown[category] = percentage/100
+            remaining_percentage -= percentage
+
+        if remaining_percentage == 0:
+            break
+
+    effective_date = get_user_input("Enter the effective date (YYYY-MM-DD): ", str, lambda x: validate_date(x))
+    
+    transaction_active = False
+    try:
+        conn.execute("BEGIN TRANSACTION")
+        transaction_active = True
+
+        breakdown_id = db_operations.insert_surplus_deficit_breakdown(conn, description, json.dumps({k: str(v) for k, v in breakdown.items()}), effective_date)
+        print("Goal (Surplus/Deficit Breakdown) added successfully.")
+        print("Breakdown:", json.dumps({k: str(v) for k, v in breakdown.items()}, indent=2))
+
+        valid_categories = set(db_operations.get_global_categories_from_db(conn))
+        latest_transaction_date = db_operations.get_latest_transaction_date(conn)
+        
+        current_date = datetime.strptime(effective_date, '%Y-%m-%d').date()
+        end_date = latest_transaction_date.replace(day=1) + relativedelta(months=1) - relativedelta(days=1)
+
+        while current_date <= end_date:
+            net_income = db_operations.get_net_income_for_month(conn, current_date.year, current_date.month)
+            
+            for category, percentage in breakdown.items():
+                amount = net_income * percentage
+                if category in valid_categories:
+                    db_operations.insert_surplus_deficit_breakdown_item(
+                        conn, breakdown_id, category, category, amount, current_date
+                    )
+                else:
+                    db_operations.insert_surplus_deficit_breakdown_item(
+                        conn, breakdown_id, None, category, amount, current_date
+                    )
+
+            current_date += relativedelta(months=1)
+
+        conn.commit()
+        transaction_active = False
+        print("Monthly breakdown items have been calculated and inserted.")
+    except Exception as e:
+        if transaction_active:
+            conn.rollback()
+        print(f"Error adding goal or calculating monthly breakdowns: {str(e)}")
+
+def validate_date(date_string):
+    try:
+        datetime.strptime(date_string, '%Y-%m-%d')
+        return True
+    except ValueError:
+        print("Invalid date format. Please use YYYY-MM-DD.")
+        return False
+
 def main_menu(conn, year, month):
     menu_options = [
         "See spending profile",
@@ -190,6 +288,7 @@ def main_menu(conn, year, month):
         "See 95th percentile most expensive nonrecurring spendings",
         "Set budget",
         "Add an adjustment transaction",
+        "Set goals (Surplus/Deficit Breakdown)",
         "Change analysis period",
         "Exit"
     ]
@@ -212,8 +311,10 @@ def main_menu(conn, year, month):
         elif choice == 5:
             add_adjustment_transaction(conn, year, month)
         elif choice == 6:
-            return True  # Signal to change the analysis period
+            set_goals(conn)
         elif choice == 7:
+            return True  # Signal to change the analysis period
+        elif choice == 8:
             return False  # Signal to exit the program
 
 def show_p95_expensive_nonrecurring(conn, year, month):
