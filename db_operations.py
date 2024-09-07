@@ -226,3 +226,52 @@ def get_vendor_category_mapping(conn, vendor):
         print(f"An error occurred while retrieving vendor-category mapping: {str(e)}")
         return None
 
+def insert_surplus_deficit_breakdown(conn, description, breakdown, effective_date):
+    try:
+        query = """
+        INSERT INTO surplus_and_deficit_breakdowns (description, breakdown, effective_date)
+        VALUES (?, ?, ?)
+        RETURNING id
+        """
+        result = conn.execute(query, [description, breakdown, effective_date]).fetchone()
+        conn.commit()
+        print("Surplus/Deficit Breakdown inserted successfully.")
+        return result[0]  # Return the id of the inserted row
+    except Exception as e:
+        conn.rollback()
+        print(f"An error occurred while inserting Surplus/Deficit Breakdown: {str(e)}")
+        raise
+
+def get_net_income_for_month(conn, year, month):
+    query = """
+    SELECT SUM(amount) as net_income
+    FROM consolidated_transactions
+    WHERE EXTRACT(YEAR FROM "Transaction Date") = ?
+    AND EXTRACT(MONTH FROM "Transaction Date") = ?
+    AND category is not null
+    """
+    result = conn.execute(query, [year, month]).fetchone()
+    return result[0] if result[0] is not None else 0
+
+def insert_surplus_deficit_breakdown_item(conn, breakdown_id, category, description, amount, date):
+    try:
+        query = """
+        INSERT INTO surplus_and_deficit_breakdown_items 
+        (surplus_and_deficit_breakdown_id, category, description, amount, date)
+        VALUES (?, ?, ?, ?, ?)
+        """
+        conn.execute(query, [breakdown_id, category, description, amount, date])
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        print(f"An error occurred while inserting Surplus/Deficit Breakdown Item: {str(e)}")
+        raise
+
+def get_latest_transaction_date(conn):
+    query = """
+    SELECT MAX("Transaction Date") 
+    FROM consolidated_transactions
+    """
+    result = conn.execute(query).fetchone()
+    return result[0] if result[0] else date.today()
+
