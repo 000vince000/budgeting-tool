@@ -88,6 +88,57 @@ def create_table_vendor_category_mapping(conn):
         print(f"An error occurred while creating vendor_category_mapping: {str(e)}")
         raise
 
+def create_table_surplus_and_deficit_breakdowns(conn):
+    try:
+        # Create autoincrementing sequence
+        create_seq_query = "CREATE SEQUENCE IF NOT EXISTS surplus_and_deficit_breakdowns_id_seq START 1;"
+        conn.execute(create_seq_query)
+
+        # Create table
+        create_table_query = """
+        CREATE TABLE IF NOT EXISTS surplus_and_deficit_breakdowns (
+            id BIGINT DEFAULT nextval('surplus_and_deficit_breakdowns_id_seq') PRIMARY KEY,
+            description VARCHAR,
+            breakdown JSON,
+            effective_date DATE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+        conn.execute(create_table_query)
+        print("Table surplus_and_deficit_breakdowns created successfully")
+        create_table_surplus_and_deficit_breakdown_items(conn)
+
+    except Exception as e:
+        print(f"An error occurred while creating surplus_and_deficit_breakdowns: {str(e)}")
+        raise
+
+def create_table_surplus_and_deficit_breakdown_items(conn):
+    try:
+        # Create autoincrementing sequence
+        create_seq_query = "CREATE SEQUENCE IF NOT EXISTS surplus_and_deficit_breakdown_items_id_seq START 1;"
+        conn.execute(create_seq_query)
+
+        # Create table
+        create_table_query = """
+        CREATE TABLE IF NOT EXISTS surplus_and_deficit_breakdown_items (
+            id BIGINT DEFAULT nextval('surplus_and_deficit_breakdown_items_id_seq') PRIMARY KEY,
+            surplus_and_deficit_breakdown_id BIGINT,
+            category VARCHAR,
+            description VARCHAR,
+            amount DECIMAL(10, 2),
+            date DATE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (surplus_and_deficit_breakdown_id) REFERENCES surplus_and_deficit_breakdowns(id),
+            FOREIGN KEY (category) REFERENCES categories(category)
+        )
+        """
+        conn.execute(create_table_query)
+        print("Table surplus_and_deficit_breakdown_items created successfully")
+
+    except Exception as e:
+        print(f"An error occurred while creating surplus_and_deficit_breakdown_items: {str(e)}")
+        raise
+
 def create_schema_menu(conn):
     while True:
         print("\nCreate Schema Menu:")
@@ -95,9 +146,10 @@ def create_schema_menu(conn):
         print("2. Create category_budgets table")
         print("3. Create current_budgets view")
         print("4. Create vendor_category_mapping table")
-        print("5. Exit")
+        print("5. Create surplus_and_deficit_breakdowns table")
+        print("6. Exit")
         
-        choice = input("Enter your choice (1-5): ")
+        choice = input("Enter your choice (1-6): ")
         
         if choice == '1':
             create_table_consolidated_transactions(conn)
@@ -108,6 +160,8 @@ def create_schema_menu(conn):
         elif choice == '4':
             create_table_vendor_category_mapping(conn)
         elif choice == '5':
+            create_table_surplus_and_deficit_breakdowns(conn)
+        elif choice == '6':
             break
         else:
             print("Invalid choice. Please try again.")
