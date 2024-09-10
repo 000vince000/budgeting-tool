@@ -187,91 +187,61 @@ def add_adjustment_transaction(conn, year, month):
         print(f"Error adding transaction: {str(e)}")
 
 def set_goals(conn):
-    print("\nSetting a new goal for investment, savings, and other categories:")
+    print_divider("Setting a New Goal")
     description = input("Enter a description for this goal: ")
+    breakdown = get_goal_breakdown(conn)
+    effective_date = get_user_input("Enter the effective date (YYYY-MM-DD): ", str, validate_date)
     
+    try:
+        with conn.cursor() as cursor:
+            breakdown_id = insert_goal_breakdown(cursor, description, breakdown, effective_date)
+            calculate_and_insert_monthly_breakdowns(cursor, breakdown_id, breakdown, effective_date)
+        conn.commit()
+        print("Goal added successfully and monthly breakdowns calculated.")
+    except Exception as e:
+        conn.rollback()
+        print(f"Error adding goal or calculating monthly breakdowns: {str(e)}")
+
+def get_goal_breakdown(conn):
     breakdown = {}
     remaining_percentage = Decimal('100')
+    categories = ['Investment', 'Savings'] + sorted(db_operations.get_global_categories_from_db(conn))
 
-    # Ask for investment percentage, but ask user to input an integer
-    investment_percentage = get_user_input("Enter an integer as percentage for investment (0-100%): ", Decimal, lambda x: 0 <= x <= remaining_percentage)
-    if investment_percentage > 0:
-        breakdown['Investment'] = investment_percentage/100
-        remaining_percentage -= investment_percentage
-
-    # Ask for savings percentage
-    if remaining_percentage > 0:
-        savings_percentage = get_user_input(f"Enter an integer as percentage for savings (0-{remaining_percentage}%): ", Decimal, lambda x: 0 <= x <= remaining_percentage)
-        if savings_percentage > 0:
-            breakdown['Savings'] = savings_percentage/100
-            remaining_percentage -= savings_percentage
-
-    # Get existing categories
-    categories = sorted(db_operations.get_global_categories_from_db(conn))
-
-    # Ask for existing categories and custom categories
-    while remaining_percentage > 0:
-        print(f"\nRemaining percentage: {remaining_percentage}%")
-        print("Choose a category or enter a custom category:")
-        print_numbered_list(categories + ["Enter custom category", "Finish"])
-        
-        choice = get_user_choice("Enter your choice: ", range(1, len(categories) + 3))
-        
-        if choice == len(categories) + 2:  # Finish
+    for category in categories:
+        if remaining_percentage <= 0:
             break
-        elif choice == len(categories) + 1:  # Custom category
-            category = input("Enter custom category name: ")
-        else:
-            category = categories[choice - 1]
-        
-        percentage = get_user_input(f"Enter an integer as percentage for {category} (0-{remaining_percentage}%): ", Decimal, lambda x: 0 <= x <= remaining_percentage)
+        percentage = get_user_input(f"Enter percentage for {category} (0-{remaining_percentage}%): ", 
+                                    Decimal, lambda x: 0 <= x <= remaining_percentage)
         if percentage > 0:
-            breakdown[category] = percentage/100
+            breakdown[category] = percentage / 100
             remaining_percentage -= percentage
 
-        if remaining_percentage == 0:
-            break
+    return breakdown
 
-    effective_date = get_user_input("Enter the effective date (YYYY-MM-DD): ", str, lambda x: validate_date(x))
+def insert_goal_breakdown(cursor, description, breakdown, effective_date):
+    return db_operations.insert_surplus_deficit_breakdown(
+        cursor, description, json.dumps({k: str(v) for k, v in breakdown.items()}), effective_date
+    )
+
+def calculate_and_insert_monthly_breakdowns(cursor, breakdown_id, breakdown, effective_date):
+    valid_categories = set(db_operations.get_global_categories_from_db(cursor))
+    latest_transaction_date = db_operations.get_latest_transaction_date(cursor)
     
-    transaction_active = False
-    try:
-        conn.execute("BEGIN TRANSACTION")
-        transaction_active = True
+    current_date = datetime.strptime(effective_date, '%Y-%m-%d').date()
+    end_date = latest_transaction_date.replace(day=1) + relativedelta(months=1) - relativedelta(days=1)
 
-        breakdown_id = db_operations.insert_surplus_deficit_breakdown(conn, description, json.dumps({k: str(v) for k, v in breakdown.items()}), effective_date)
-        print("Goal (Surplus/Deficit Breakdown) added successfully.")
-        print("Breakdown:", json.dumps({k: str(v) for k, v in breakdown.items()}, indent=2))
-
-        valid_categories = set(db_operations.get_global_categories_from_db(conn))
-        latest_transaction_date = db_operations.get_latest_transaction_date(conn)
+    while current_date <= end_date:
+        net_income = db_operations.get_net_income_for_month(cursor, current_date.year, current_date.month)
         
-        current_date = datetime.strptime(effective_date, '%Y-%m-%d').date()
-        end_date = latest_transaction_date.replace(day=1) + relativedelta(months=1) - relativedelta(days=1)
+        for category, percentage in breakdown.items():
+            amount = net_income * percentage
+            db_operations.insert_surplus_deficit_breakdown_item(
+                cursor, breakdown_id, 
+                category if category in valid_categories else None, 
+                category, amount, current_date
+            )
 
-        while current_date <= end_date:
-            net_income = db_operations.get_net_income_for_month(conn, current_date.year, current_date.month)
-            
-            for category, percentage in breakdown.items():
-                amount = net_income * percentage
-                if category in valid_categories:
-                    db_operations.insert_surplus_deficit_breakdown_item(
-                        conn, breakdown_id, category, category, amount, current_date
-                    )
-                else:
-                    db_operations.insert_surplus_deficit_breakdown_item(
-                        conn, breakdown_id, None, category, amount, current_date
-                    )
-
-            current_date += relativedelta(months=1)
-
-        conn.commit()
-        transaction_active = False
-        print("Monthly breakdown items have been calculated and inserted.")
-    except Exception as e:
-        if transaction_active:
-            conn.rollback()
-        print(f"Error adding goal or calculating monthly breakdowns: {str(e)}")
+        current_date += relativedelta(months=1)
 
 def validate_date(date_string):
     try:
