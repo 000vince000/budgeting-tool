@@ -6,6 +6,17 @@ def get_db_connection(db_name):
     conn = duckdb.connect(db_name)
     return conn
 
+def execute_query(conn, query, params=None):
+    try:
+        if params:
+            conn.execute(query, params)
+        else:
+            conn.execute(query)
+    except Exception as e:
+        print(f"Error executing query: {query}")
+        print(f"Error message: {str(e)}")
+        raise
+
 def query_and_return_df(conn, query_statement, params=None):
     if params:
         result = conn.execute(query_statement, params)
