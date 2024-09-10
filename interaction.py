@@ -195,7 +195,7 @@ def set_goals(conn):
     try:
         with conn.cursor() as cursor:
             breakdown_id = insert_goal_breakdown(cursor, description, breakdown, effective_date)
-            calculate_and_insert_monthly_breakdowns(cursor, breakdown_id, breakdown, effective_date)
+            calculate_and_conditionally_insert_monthly_breakdowns(cursor, breakdown_id, breakdown, effective_date)
         conn.commit()
         print("Goal added successfully and monthly breakdowns calculated.")
     except Exception as e:
@@ -223,23 +223,45 @@ def insert_goal_breakdown(cursor, description, breakdown, effective_date):
         cursor, description, json.dumps({k: str(v) for k, v in breakdown.items()}), effective_date
     )
 
-def calculate_and_insert_monthly_breakdowns(cursor, breakdown_id, breakdown, effective_date):
+def calculate_and_conditionally_insert_monthly_breakdowns(cursor, breakdown_id, breakdown, effective_date):
+    """
+    Calculate and insert monthly breakdowns for a given goal.
+
+    This function:
+    1. Determines the date range from the effective date to the latest transaction date.
+    2. For each month in this range:
+       a. Calculates the net income for that month.
+       b. Applies the goal breakdown percentages to the net income.
+       c. Inserts breakdown items for each category when current_date is in a month that has already ended.
+
+    This allows for tracking how the goal applies to actual income over time,
+    adjusting for varying monthly incomes.
+
+    Args:
+    cursor: Database cursor for executing queries.
+    breakdown_id: ID of the goal breakdown.
+    breakdown: Dictionary of category percentages for the goal.
+    effective_date: Start date for calculating breakdowns.
+    """
     valid_categories = set(db_operations.get_global_categories_from_db(cursor))
     latest_transaction_date = db_operations.get_latest_transaction_date(cursor)
     
     current_date = datetime.strptime(effective_date, '%Y-%m-%d').date()
     end_date = latest_transaction_date.replace(day=1) + relativedelta(months=1) - relativedelta(days=1)
+    today = date.today()
 
     while current_date <= end_date:
-        net_income = db_operations.get_net_income_for_month(cursor, current_date.year, current_date.month)
-        
-        for category, percentage in breakdown.items():
-            amount = net_income * percentage
-            db_operations.insert_surplus_deficit_breakdown_item(
-                cursor, breakdown_id, 
-                category if category in valid_categories else None, 
-                category, amount, current_date
-            )
+        # Only process months that have ended
+        if current_date.replace(day=1) + relativedelta(months=1) <= today:
+            net_income = db_operations.get_net_income_for_month(cursor, current_date.year, current_date.month)
+            
+            for category, percentage in breakdown.items():
+                amount = net_income * percentage
+                db_operations.insert_surplus_deficit_breakdown_item(
+                    cursor, breakdown_id, 
+                    category if category in valid_categories else None, 
+                    category, amount, current_date
+                )
 
         current_date += relativedelta(months=1)
 

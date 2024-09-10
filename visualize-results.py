@@ -63,6 +63,23 @@ def get_user_specified_date():
             print("Invalid input. Please enter numbers only.")
 
 def main(year, month):
+    """
+    Main function to visualize and analyze financial data for a specified month.
+
+    This function:
+    1. Connects to the database and retrieves the month summary data.
+    2. Prints a summary of the specified month's financial data.
+    3. Calculates and displays the net income for the month.
+    4. Creates a bar plot comparing specified month sum with P50 and P85 markers for each category.
+    5. Saves the plot as an image file and opens it in the default web browser.
+
+    The function excludes income categories (Salary and Rental income) from the visualization
+    to focus on expense categories.
+
+    Args:
+    year (int): The year for which to generate the report.
+    month (int): The month (1-12) for which to generate the report.
+    """
     db_name = 'budgeting-tool.db'
 
     conn = duckdb.connect(db_name)
