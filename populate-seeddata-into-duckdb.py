@@ -1,27 +1,8 @@
 import duckdb
 import pandas as pd
 from datetime import datetime
-
-def execute_query(conn, query, params=None):
-    try:
-        if params:
-            conn.execute(query, params)
-        else:
-            conn.execute(query)
-    except Exception as e:
-        print(f"Error executing query: {query}")
-        print(f"Error message: {str(e)}")
-        raise
-
-def create_table(conn, table_name, columns):
-    quoted_table_name = f'"{table_name}"'
-    create_table_query = f"""
-    CREATE TABLE IF NOT EXISTS {quoted_table_name} (
-        {', '.join(columns)}
-    )
-    """
-    print(f"Creating table: {table_name}")
-    execute_query(conn, create_table_query)
+import db_operations
+import create_schema
 
 def check_primary_key(conn, table_name):
     quoted_table_name = f"'{table_name}'"
@@ -43,7 +24,7 @@ def insert_data(conn, table_name, data, column_names):
         placeholders = ', '.join(['?' for _ in column_names])
         insert_query = f"INSERT INTO {quoted_table_name} ({', '.join(column_names)}) VALUES ({placeholders})"
         try:
-            execute_query(conn, insert_query, item if isinstance(item, tuple) else (item,))
+            db_operations.execute_query(conn, insert_query, item if isinstance(item, tuple) else (item,))
             inserted_count += 1
         except duckdb.ConstraintException as ce:
             print(f"ConstraintException for row {item}")
@@ -68,7 +49,7 @@ def verify_data(conn, table_name):
 def populate_table(db_name, table_name, data, columns):
     conn = duckdb.connect(db_name)
     try:
-        create_table(conn, table_name, columns)
+        create_schema.create_table(conn, table_name, columns)
         check_primary_key(conn, table_name)
         column_names = [col.split()[0] for col in columns]  # Extract column names without types
         insert_data(conn, table_name, data, column_names)
