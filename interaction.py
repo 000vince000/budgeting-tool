@@ -190,6 +190,9 @@ def set_goals(conn):
     print_divider("Setting a New Goal")
     description = input("Enter a description for this goal: ")
     breakdown = get_goal_breakdown(conn)
+    if not breakdown:
+        print("No goals set. Exiting goal setting.")
+        return
     effective_date = get_user_input("Enter the effective date (YYYY-MM-DD): ", str, validate_date)
     
     try:
@@ -207,20 +210,52 @@ def get_goal_breakdown(conn):
     remaining_percentage = Decimal('100')
     categories = ['Investment', 'Savings'] + sorted(db_operations.get_global_categories_from_db(conn))
 
-    for category in categories:
-        if remaining_percentage <= 0:
-            break
+    # Ask for Investment and Savings first
+    for category in ['Investment', 'Savings']:
         percentage = get_user_input(f"Enter percentage for {category} (0-{remaining_percentage}%): ", 
                                     Decimal, lambda x: 0 <= x <= remaining_percentage)
         if percentage > 0:
             breakdown[category] = percentage / 100
             remaining_percentage -= percentage
+        categories.remove(category)
+
+    while remaining_percentage > 0:
+        print("\nAvailable categories:")
+        print_numbered_list(categories)
+        print(f"{len(categories) + 1}. Enter a new description")
+        print(f"{len(categories) + 2}. Finish setting goals")
+
+        choice = get_user_choice("\nChoose a category number or action: ", range(1, len(categories) + 3))
+        
+        if choice == len(categories) + 2:
+            break
+        elif choice == len(categories) + 1:
+            description = input("Enter a new description: ")
+            percentage = get_user_input(f"Enter percentage for this description (0-{remaining_percentage}%): ", 
+                                        Decimal, lambda x: 0 <= x <= remaining_percentage)
+            if percentage > 0:
+                breakdown[description] = percentage / 100
+                remaining_percentage -= percentage
+        else:
+            selected_category = categories[choice - 1]
+            percentage = get_user_input(f"Enter percentage for {selected_category} (0-{remaining_percentage}%): ", 
+                                        Decimal, lambda x: 0 <= x <= remaining_percentage)
+            if percentage > 0:
+                breakdown[selected_category] = percentage / 100
+                remaining_percentage -= percentage
+                categories.remove(selected_category)
+
+        print(f"\nRemaining percentage: {remaining_percentage}%")
+
+    if remaining_percentage > 0:
+        print(f"Warning: {remaining_percentage}% of the budget was not allocated.")
 
     return breakdown
 
 def insert_goal_breakdown(cursor, description, breakdown, effective_date):
+    breakdown_json = json.dumps({k: str(v) for k, v in breakdown.items()})
     return db_operations.insert_surplus_deficit_breakdown(
-        cursor, description, json.dumps({k: str(v) for k, v in breakdown.items()}), effective_date
+        cursor, description, breakdown_json, effective_date
     )
 
 def calculate_and_conditionally_insert_monthly_breakdowns(cursor, breakdown_id, breakdown, effective_date):
@@ -234,13 +269,10 @@ def calculate_and_conditionally_insert_monthly_breakdowns(cursor, breakdown_id, 
        b. Applies the goal breakdown percentages to the net income.
        c. Inserts breakdown items for each category when current_date is in a month that has already ended.
 
-    This allows for tracking how the goal applies to actual income over time,
-    adjusting for varying monthly incomes.
-
     Args:
     cursor: Database cursor for executing queries.
     breakdown_id: ID of the goal breakdown.
-    breakdown: Dictionary of category percentages for the goal.
+    breakdown: Dictionary of category/description percentages for the goal.
     effective_date: Start date for calculating breakdowns.
     """
     valid_categories = set(db_operations.get_global_categories_from_db(cursor))
@@ -255,12 +287,13 @@ def calculate_and_conditionally_insert_monthly_breakdowns(cursor, breakdown_id, 
         if current_date.replace(day=1) + relativedelta(months=1) <= today:
             net_income = db_operations.get_net_income_for_month(cursor, current_date.year, current_date.month)
             
-            for category, percentage in breakdown.items():
-                amount = net_income * percentage
+            for category_or_description, percentage in breakdown.items():
+                amount = net_income * Decimal(percentage)
                 db_operations.insert_surplus_deficit_breakdown_item(
                     cursor, breakdown_id, 
-                    category if category in valid_categories else None, 
-                    category, amount, current_date
+                    category_or_description if category_or_description in valid_categories else None, 
+                    category_or_description if category_or_description not in valid_categories else None, 
+                    amount, current_date
                 )
 
         current_date += relativedelta(months=1)
