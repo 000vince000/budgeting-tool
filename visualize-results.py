@@ -156,6 +156,20 @@ def display_goals_and_breakdown_items(conn, year, month):
 
     return result
 
+def display_single_goal_progress(description, goal_amount, actual_amount):
+    progress = goal_amount - actual_amount
+    print(f"{description}:")
+    print(f"  Goal: ${goal_amount:.2f}")
+    print(f"  Actual: ${actual_amount:.2f}")
+    print(f"  Progress: ${progress:.2f}")
+    if progress > 0:
+        print(f"  Status: ${progress:.2f} remaining")
+    elif progress < 0:
+        print(f"  Status: ${-progress:.2f} over goal")
+    else:
+        print("  Status: Goal met exactly")
+    print()
+
 def display_goal_progress(conn, year, month):
     """
     Display the goal progress based on active breakdowns for the specified month.
@@ -214,12 +228,7 @@ def display_goal_progress(conn, year, month):
             actual_amount = actual_spending[actual_spending['Category'] == description]['actual_amount'].values
             actual_amount = actual_amount[0] if len(actual_amount) > 0 else 0
             
-            progress = goal_amount - actual_amount
-            
-            print(f"{description}:")
-            print(f"  Goal: ${goal_amount:.2f}")
-            print(f"  Actual: ${actual_amount:.2f}")
-            print(f"  Progress: ${progress:.2f}")
+            display_single_goal_progress(description, goal_amount, actual_amount)
             
     else:
         print(f"No goal items found for {year}-{month:02d}.")

@@ -258,6 +258,16 @@ def insert_goal_breakdown(cursor, description, breakdown, effective_date):
         cursor, description, breakdown_json, effective_date
     )
 
+def insert_single_breakdown_item(cursor, breakdown_id, category_or_description, percentage, net_income, current_date, valid_categories):
+    amount = net_income * Decimal(percentage)
+    if category_or_description in valid_categories:
+        category = description = category_or_description
+    else:
+        category, description = None, category_or_description
+    db_operations.insert_surplus_deficit_breakdown_item(
+        cursor, breakdown_id, category, description, amount, current_date
+    )
+
 def calculate_and_conditionally_insert_monthly_breakdowns(cursor, breakdown_id, breakdown, effective_date):
     """
     Calculate and insert monthly breakdowns for a given goal.
@@ -286,21 +296,8 @@ def calculate_and_conditionally_insert_monthly_breakdowns(cursor, breakdown_id, 
         # Only process months that have ended
         if current_date.replace(day=1) + relativedelta(months=1) <= today:
             net_income = db_operations.get_net_income_for_month(cursor, current_date.year, current_date.month)
-            
             for category_or_description, percentage in breakdown.items():
-                amount = net_income * Decimal(percentage)
-                if category_or_description in valid_categories:
-                    category = category_or_description
-                    description = category  # Set description equal to category
-                else:
-                    category = None
-                    description = category_or_description
-                db_operations.insert_surplus_deficit_breakdown_item(
-                    cursor, breakdown_id, 
-                    category, 
-                    description, 
-                    amount, current_date
-                )
+                insert_single_breakdown_item(cursor, breakdown_id, category_or_description, percentage, net_income, current_date, valid_categories)
 
         current_date += relativedelta(months=1)
 

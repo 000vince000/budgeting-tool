@@ -105,7 +105,7 @@ def get_latest_month(conn):
     SELECT DATE_TRUNC('month', MAX("Transaction Date")) AS month
     FROM consolidated_transactions
     """
-    return conn.execute(query).fetchone()[0]
+    return execute_scalar_query(conn, query)
 
 def fetch_transactions(conn, category, year, month):
     query = """
@@ -284,6 +284,9 @@ def get_latest_transaction_date(conn):
     SELECT MAX("Transaction Date") 
     FROM consolidated_transactions
     """
-    result = conn.execute(query).fetchone()
-    return result[0] if result[0] else date.today()
+    return execute_scalar_query(conn, query) or date.today()
 
+
+def execute_scalar_query(conn, query, params=None):
+    result = conn.execute(query, params).fetchone()
+    return result[0] if result else None
