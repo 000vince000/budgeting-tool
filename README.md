@@ -9,22 +9,24 @@ This is a comprehensive budgeting tool that helps you manage your finances by tr
 - Set and manage budgets for different categories
 - Visualize spending patterns with charts
 - Store data in a DuckDB database for efficient querying
+- Set goals and track progress for different categories
+- Display goal progress and breakdown items
 
 ## Files and Their Functions
 
 ### Main Scripts
 
-1. `interaction.py`: The main interface for user interaction. It provides a menu to view spending profiles and set budgets.
+1. `interaction.py`: The main interface for user interaction. It provides a menu to view spending profiles, set budgets, and manage goals.
 
 2. `ingest.py`: Handles the import of transaction data from CSV files. It processes both Chase and Charles Schwab formats.
 
-3. `visualize-results.py`: Creates visualizations of spending data using matplotlib.
+3. `visualize-results.py`: Creates visualizations of spending data using matplotlib and displays goal progress.
 
 4. `create-schema.py`: Sets up the database schema, creating necessary tables and views.
 
 ### Database Operations
 
-5. `db_operations.py`: Contains functions for database operations like querying, inserting data, and retrieving category information.
+5. `db_operations.py`: Contains functions for database operations like querying, inserting data, retrieving category information, and managing goals.
 
 6. `populate-seeddata-into-duckdb.py`: Populates the database with initial seed data for categories and category matching patterns.
 
@@ -32,9 +34,7 @@ This is a comprehensive budgeting tool that helps you manage your finances by tr
 
 ### SQL Queries
 
-8. `latest-month-summary.sql`: SQL query to generate a summary of the latest month's spending, including budget comparisons.
-
-9. `current-budgets.sql`: SQL query to retrieve current budgets for each category.
+8. `specific-month-summary.sql`: SQL query to generate a summary of a specified month's spending, including budget comparisons and category statistics.
 
 ## Setup and Usage
 
@@ -50,13 +50,13 @@ This is a comprehensive budgeting tool that helps you manage your finances by tr
 
 6. Use `ingest.py` to import transaction data from your bank CSV files.
 
-7. Use the "See latest month's spending profile" option to visualize your spending patterns.
+7. Use the "See latest month's spending profile" option to visualize your spending patterns and goal progress.
 
 ## Data Flow
 
 1. Bank CSV files → `ingest.py` → DuckDB database
 2. User input → `interaction.py` → DuckDB database
-3. DuckDB database → `visualize-results.py` → Spending charts
+3. DuckDB database → `visualize-results.py` → Spending charts and goal progress reports
 
 ## Customization
 
@@ -65,3 +65,10 @@ You can customize category mappings and global categories by modifying the seed 
 ## Note
 
 This tool is designed for personal use and may require modifications to work with different bank CSV formats or to meet specific budgeting needs.
+
+## Recent Updates
+
+- Added functionality to set and track goals for different categories
+- Implemented goal progress visualization in the monthly spending profile
+- Enhanced the database schema to support surplus and deficit breakdowns
+- Improved error handling and data validation throughout the application
