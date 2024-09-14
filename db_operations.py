@@ -61,7 +61,8 @@ def persist_data_in_db(conn, df, quoted_table_name):
             ))
             inserted_count += 1
         except duckdb.ConstraintException as ce:
-            print(f"ConstraintException for row {index}: {str(ce)}")
+            #print(f"ConstraintException for row {index}: {str(ce)}")
+            print(f"Duplicate entry rejected for row {index}, Transaction Date: {row[cols[1]]}, Description: {row[cols[2]]}, Amount: {row[cols[3]]}")
             error_count += 1
         except Exception as e:
             print(f"Error inserting row {index}: {str(e)}")
