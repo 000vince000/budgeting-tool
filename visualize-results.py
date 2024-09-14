@@ -162,13 +162,6 @@ def display_single_goal_progress(description, goal_amount, actual_amount):
     print(f"  Goal: ${goal_amount:.2f}")
     print(f"  Actual: ${actual_amount:.2f}")
     print(f"  Progress: ${progress:.2f}")
-    if progress > 0:
-        print(f"  Status: ${progress:.2f} remaining")
-    elif progress < 0:
-        print(f"  Status: ${-progress:.2f} over goal")
-    else:
-        print("  Status: Goal met exactly")
-    print()
 
 def display_goal_progress(conn, year, month):
     """

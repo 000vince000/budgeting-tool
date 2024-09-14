@@ -289,3 +289,47 @@ def get_latest_transaction_date(conn):
 def execute_scalar_query(conn, query, params=None):
     result = conn.execute(query, params).fetchone()
     return result[0] if result else None
+
+def get_p85_for_category(conn, category, year, month):
+    query = """
+    SELECT PERCENTILE_CONT(0.85) WITHIN GROUP (ORDER BY ABS(Amount))
+    FROM consolidated_transactions
+    WHERE Category = ?
+      AND strftime('%Y', "Transaction Date") = ?
+      AND strftime('%m', "Transaction Date") = ?
+    """
+    return execute_scalar_query(conn, query, [category, str(year), str(month).zfill(2)])
+
+def get_transactions_above_threshold(conn, category, year, month, threshold):
+    query = """
+    SELECT "Transaction Date", Description, Amount
+    FROM consolidated_transactions
+    WHERE Category = ?
+      AND strftime('%Y', "Transaction Date") = ?
+      AND strftime('%m', "Transaction Date") = ?
+      AND ABS(Amount) > ?
+    ORDER BY ABS(Amount) DESC
+    """
+    return query_and_return_df(conn, query, [category, str(year), str(month).zfill(2), threshold])
+
+def get_p90_across_categories(conn, year, month, excluded_categories):
+    placeholders = ','.join(['?'] * len(excluded_categories))
+    query = f"""
+    SELECT PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY ABS(Amount))
+    FROM consolidated_transactions
+    WHERE strftime('%Y', "Transaction Date") = ?
+      AND strftime('%m', "Transaction Date") = ?
+      AND Category NOT IN ({placeholders})
+    """
+    params = [str(year), str(month).zfill(2)] + excluded_categories
+    return execute_scalar_query(conn, query, params)
+
+def check_recurring_transaction(conn, description, amount, transaction_date):
+    query = """
+    SELECT COUNT(*) 
+    FROM consolidated_transactions
+    WHERE Description = ? 
+      AND ABS(Amount) = ABS(?)
+      AND "Transaction Date" != ?
+    """
+    return execute_scalar_query(conn, query, [description, amount, transaction_date])
