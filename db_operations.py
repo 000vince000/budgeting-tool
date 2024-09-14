@@ -286,7 +286,6 @@ def get_latest_transaction_date(conn):
     """
     return execute_scalar_query(conn, query) or date.today()
 
-
 def execute_scalar_query(conn, query, params=None):
     result = conn.execute(query, params).fetchone()
     return result[0] if result else None

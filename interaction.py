@@ -7,6 +7,7 @@ import json
 from decimal import Decimal
 from datetime import datetime, date
 from dateutil.relativedelta import relativedelta
+from collections import defaultdict
 
 # Helper functions
 def print_numbered_list(items, start=1):
@@ -67,9 +68,37 @@ def print_ascii_title():
     print(ascii_art)
 
 def get_user_specified_date():
-    year = get_user_input("Enter the year (YYYY): ", int, lambda x: 1900 <= x <= 9999)
-    month = get_user_input("Enter the month (1-12): ", int, lambda x: 1 <= x <= 12)
-    return year, month
+    today = date.today()
+    last_month = today - relativedelta(months=1)
+    
+    while True:
+        year_input = input(f"Enter the year (YYYY) or press Enter for current year ({today.year}): ").strip()
+        if year_input == "":
+            year = today.year
+        else:
+            try:
+                year = int(year_input)
+                if not (1900 <= year <= 9999):
+                    print("Invalid year. Please enter a year between 1900 and 9999.")
+                    continue
+            except ValueError:
+                print("Invalid input. Please enter a valid year or press Enter.")
+                continue
+
+        month_input = input(f"Enter the month (1-12) or press Enter for previous month ({last_month.month}): ").strip()
+        if month_input == "":
+            month = last_month.month
+        else:
+            try:
+                month = int(month_input)
+                if not (1 <= month <= 12):
+                    print("Invalid month. Please enter a month between 1 and 12.")
+                    continue
+            except ValueError:
+                print("Invalid input. Please enter a valid month or press Enter.")
+                continue
+
+        return year, month
 
 def run_visualize_script(year, month):
     script_path = os.path.join(os.path.dirname(__file__), 'visualize-results.py')
@@ -314,6 +343,7 @@ def main_menu(conn, year, month):
         "See spending profile",
         "Dig into a specific category",
         "See 95th percentile most expensive nonrecurring spendings",
+        "Review extraordinary spendings",
         "Set budget",
         "Add an adjustment transaction",
         "Set goals (Surplus/Deficit Breakdown)",
@@ -322,9 +352,10 @@ def main_menu(conn, year, month):
     ]
 
     while True:
-        print("\nMain Menu:")
+        print_divider("Main Menu")
         print(f"Current analysis period: {datetime(year, month, 1).strftime('%B %Y')}")
         print_numbered_list(menu_options)
+        print("=" * 50)  # Add a bottom border
         
         choice = get_user_choice("Enter your choice: ", range(1, len(menu_options) + 1))
         
@@ -335,25 +366,134 @@ def main_menu(conn, year, month):
         elif choice == 3:
             show_p95_expensive_nonrecurring(conn, year, month)
         elif choice == 4:
-            set_budget(conn)
+            review_extraordinary_spendings(conn, year, month)
         elif choice == 5:
-            add_adjustment_transaction(conn, year, month)
+            set_budget(conn)
         elif choice == 6:
-            set_goals(conn)
+            add_adjustment_transaction(conn, year, month)
         elif choice == 7:
-            return True  # Signal to change the analysis period
+            set_goals(conn)
         elif choice == 8:
+            return True  # Signal to change the analysis period
+        elif choice == 9:
             return False  # Signal to exit the program
 
 def show_p95_expensive_nonrecurring(conn, year, month):
+    print_divider("95th Percentile Most Expensive Non-recurring Spendings")
     df = db_operations.show_p95_expensive_nonrecurring_for_latest_month(conn, year, month)
-    if df is None:
+    if df is None or df.empty:
         print("No non-recurring expenses found.")
     else:
-        print("\n95th percentile most expensive non-recurring spendings:")
-        print_dataframe(df)
-        total = df['Amount'].sum()
-        print(f"Total ........................... ${total:.2f}")
+        total = 0
+        for _, row in df.iterrows():
+            date = row['Transaction Date'].strftime('%Y-%m-%d')
+            amount = abs(row['Amount'])
+            print(f"[{row['Category']:<20}] {date}\t{row['Description']:<40}\t${amount:>10.2f}")
+            total += amount
+        print(f"\nTotal 95th percentile non-recurring spending: ${total:>10.2f}")
+
+def review_extraordinary_spendings(conn, year, month):
+    print_divider("Reviewing Extraordinary Spendings")
+    
+    # Step 1: Get month summary
+    df = db_operations.get_month_summary(conn, year, month)
+    
+    # Step 2: Order by (specified_month_sum - p50_monthly_sum) high to low
+    df['difference'] = df['specified_month_sum'] - df['p50_monthly_sum']
+    df_sorted = df.sort_values('difference', ascending=False)
+    
+    # Exclude specified categories
+    excluded_categories = ['Rental income', 'Salary', 'Monthly fixed cost', 'Monthly property expense']
+    df_sorted = df_sorted[~df_sorted['Category'].isin(excluded_categories)]
+    
+    # Step 3-5: Fetch transactions and store in memory
+    extraordinary_transactions = defaultdict(list)
+    
+    for _, row in df_sorted.iterrows():
+        category = row['Category']
+        
+        # Calculate P85 for this category and month
+        p85_query = """
+        SELECT PERCENTILE_CONT(0.85) WITHIN GROUP (ORDER BY ABS(Amount))
+        FROM consolidated_transactions
+        WHERE Category = ?
+          AND strftime('%Y', "Transaction Date") = ?
+          AND strftime('%m', "Transaction Date") = ?
+        """
+        p85 = db_operations.execute_scalar_query(conn, p85_query, [category, str(year), str(month).zfill(2)])
+        
+        if p85 is None:
+            continue  # Skip if no transactions for this category
+        
+        # Fetch transactions above P85
+        query = """
+        SELECT "Transaction Date", Description, Amount
+        FROM consolidated_transactions
+        WHERE Category = ?
+          AND strftime('%Y', "Transaction Date") = ?
+          AND strftime('%m', "Transaction Date") = ?
+          AND ABS(Amount) > ?
+        ORDER BY ABS(Amount) DESC
+        """
+        
+        transactions = db_operations.query_and_return_df(conn, query, [category, str(year), str(month).zfill(2), p85])
+        
+        if not transactions.empty:
+            extraordinary_transactions[category] = transactions.to_dict('records')
+    
+    # Step 6: Calculate P90 across all categories and filter transactions
+    p90_query = """
+    SELECT PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY ABS(Amount))
+    FROM consolidated_transactions
+    WHERE strftime('%Y', "Transaction Date") = ?
+      AND strftime('%m', "Transaction Date") = ?
+      AND Category NOT IN ({})
+    """.format(','.join(['?'] * len(excluded_categories)))
+    
+    p90_params = [str(year), str(month).zfill(2)] + excluded_categories
+    p90_amount = db_operations.execute_scalar_query(conn, p90_query, p90_params)
+    
+    # Filter out transactions less expensive than P90
+    filtered_transactions = {}
+    for category, transactions in extraordinary_transactions.items():
+        filtered_transactions[category] = [t for t in transactions if abs(t['Amount']) >= p90_amount]
+    
+    # Step 7: Check for non-recurring transactions and filter
+    non_recurring_transactions = {}
+    for category, transactions in filtered_transactions.items():
+        non_recurring_transactions[category] = []
+        for transaction in transactions:
+            # Check if this transaction is recurring
+            recurring_check_query = """
+            SELECT COUNT(*) 
+            FROM consolidated_transactions
+            WHERE Description = ? 
+              AND ABS(Amount) = ABS(?)
+              AND "Transaction Date" != ?
+            """
+            count = db_operations.execute_scalar_query(
+                conn, 
+                recurring_check_query, 
+                [transaction['Description'], transaction['Amount'], transaction['Transaction Date']]
+            )
+            
+            if count == 0:  # This is a non-recurring transaction
+                non_recurring_transactions[category].append(transaction)
+
+    # Display results
+    if any(non_recurring_transactions.values()):
+        print(f"P90 amount across all categories: ${p90_amount:.2f}")
+        print("\nExtraordinary non-recurring transactions:")
+        total = 0
+        for category, transactions in non_recurring_transactions.items():
+            for transaction in transactions:
+                date = transaction['Transaction Date'].strftime('%Y-%m-%d')
+                amount = abs(transaction['Amount'])
+                print(f"[{category:<20}] {date}\t{transaction['Description']:<40}\t${amount:>10.2f}")
+                total += amount
+        print(f"\nTotal extraordinary non-recurring spending: ${total:>10.2f}")
+    else:
+        print("No extraordinary non-recurring transactions found for this month.")
 
 if __name__ == "__main__":
     print_ascii_title()
