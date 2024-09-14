@@ -109,6 +109,7 @@ def create_table_surplus_and_deficit_breakdowns_and_items(conn):
         "description VARCHAR",
         "breakdown JSON",
         "effective_date DATE",
+        "terminal_date DATE",
         "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
     ]
     create_table(conn, table_name, columns)

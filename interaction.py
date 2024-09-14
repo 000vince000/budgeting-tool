@@ -289,10 +289,16 @@ def calculate_and_conditionally_insert_monthly_breakdowns(cursor, breakdown_id, 
             
             for category_or_description, percentage in breakdown.items():
                 amount = net_income * Decimal(percentage)
+                if category_or_description in valid_categories:
+                    category = category_or_description
+                    description = category  # Set description equal to category
+                else:
+                    category = None
+                    description = category_or_description
                 db_operations.insert_surplus_deficit_breakdown_item(
                     cursor, breakdown_id, 
-                    category_or_description if category_or_description in valid_categories else None, 
-                    category_or_description if category_or_description not in valid_categories else None, 
+                    category, 
+                    description, 
                     amount, current_date
                 )
 

@@ -104,10 +104,12 @@ def main(year, month):
     excluded_categories = ['Salary', 'Rental income']
     df_filtered = df[~df['Category'].isin(excluded_categories)].sort_values('specified_month_sum', ascending=False)
 
-    # Display the month's goals and goal breakdown items
-    goals = display_goals_and_breakdown_items(conn, year, month)
-    # Display the goal progress
-    display_goal_progress(conn, year, month, df, goals)
+    # Remove these lines:
+    # goals = display_goals_and_breakdown_items(conn, year, month)
+    # display_goal_progress(conn, year, month, df, goals)
+
+    # Add this line instead:
+    display_goal_progress(conn, year, month)
     
     create_plot(df_filtered)
 
@@ -154,58 +156,70 @@ def display_goals_and_breakdown_items(conn, year, month):
 
     return result
 
-def display_goal_progress(conn, year, month, df, goals):
+def display_goal_progress(conn, year, month):
     """
-    Display the goal progress as the breakdown item's amount minus the category total.
+    Display the goal progress based on active breakdowns for the specified month.
 
     Args:
     conn: Database connection object
     year (int): The year to display goal progress for
     month (int): The month to display goal progress for
-    df (pandas.DataFrame): DataFrame containing the month summary data
     """
     print_divider("Goal Progress")
 
-    # Query to get goals for the specified month
-    query = """
-    SELECT category, amount
-    FROM surplus_and_deficit_breakdown_items
-    WHERE date = make_date(?, ?, 1)
+    # Step 1: Retrieve active breakdowns for the specified month
+    active_breakdowns_query = """
+    SELECT id, description
+    FROM surplus_and_deficit_breakdowns
+    WHERE effective_date <= make_date(?, ?, 1)
+      AND (terminal_date IS NULL OR terminal_date >= make_date(?, ?, 1))
     """
-    
-    goals = query_and_return_df(conn, query, [year, month])
-    
+    active_breakdowns = query_and_return_df(conn, active_breakdowns_query, [year, month, year, month])
+
+    if active_breakdowns.empty:
+        print(f"No active goals found for {year}-{month:02d}.")
+        return
+
+    # Step 2 & 3: Retrieve and sum up breakdown items for active breakdowns
+    breakdown_items_query = """
+    SELECT description, SUM(amount) as goal_amount
+    FROM surplus_and_deficit_breakdown_items
+    WHERE surplus_and_deficit_breakdown_id IN (
+        SELECT id
+        FROM surplus_and_deficit_breakdowns
+        WHERE effective_date <= make_date(?, ?, 1)
+          AND (terminal_date IS NULL OR terminal_date >= make_date(?, ?, 1))
+    )
+    GROUP BY description
+    """
+    goals = query_and_return_df(conn, breakdown_items_query, [year, month, year, month])
+
+    # Retrieve actual spending for the month
+    actual_spending_query = """
+    SELECT Category, SUM(Amount) as actual_amount
+    FROM consolidated_transactions
+    WHERE strftime('%Y', "Transaction Date") = ?
+      AND strftime('%m', "Transaction Date") = ?
+    GROUP BY Category
+    """
+    actual_spending = query_and_return_df(conn, actual_spending_query, [str(year), str(month).zfill(2)])
+
+    # Step 4: Calculate and display goal progress
     if not goals.empty:
         for _, goal in goals.iterrows():
-            category = goal['category']
-            goal_amount = goal['amount']
+            description = goal['description']
+            goal_amount = goal['goal_amount']
             
             # Find the actual spending for this category in the month summary
-            actual_spending = df[df['Category'] == category]['specified_month_sum'].values
+            actual_amount = actual_spending[actual_spending['Category'] == description]['actual_amount'].values
+            actual_amount = actual_amount[0] if len(actual_amount) > 0 else 0
             
-            if len(actual_spending) > 0:
-                actual_amount = actual_spending[0]
-                progress = goal_amount - actual_amount
-                
-                print(f"{category}:")
-                print(f"  Goal: ${goal_amount:.2f}")
-                print(f"  Actual: ${actual_amount:.2f}")
-                print(f"  Progress: ${progress:.2f}")
-                
-                if progress > 0:
-                    print(f"  Status: ${progress:.2f} remaining")
-                elif progress < 0:
-                    print(f"  Status: ${-progress:.2f} over goal")
-                else:
-                    print("  Status: Goal met exactly")
-                print()
-            else:
-                print(f"{category}:")
-                print(f"  Goal: ${goal_amount:.2f}")
-                print("  Actual: No data available")
-                print("  Status: Unable to calculate progress")
-                print()
+            progress = goal_amount - actual_amount
+            
+            print(f"{description}:")
+            print(f"  Goal: ${goal_amount:.2f}")
+            print(f"  Actual: ${actual_amount:.2f}")
+            print(f"  Progress: ${progress:.2f}")
+            
     else:
-        print(f"No goals found for {year}-{month:02d}.")
-
-# ... rest of the code ...
+        print(f"No goal items found for {year}-{month:02d}.")
