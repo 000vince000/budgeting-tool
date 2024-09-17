@@ -24,7 +24,7 @@ def create_plot(df):
     plt.xlabel('Category')
     plt.ylabel('Amount')
     plt.title('Specified Month Sum with P50 and P85 Markers')
-    plt.xticks(x, df['Category'], rotation=45, ha='right')
+    plt.xticks(x, df['category'], rotation=45, ha='right')  # Changed 'Category' to 'category'
     plt.legend()
     plt.tight_layout()
 
@@ -36,16 +36,22 @@ def create_plot(df):
 
     plt.gca().yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'${int(x):,}'))
 
+# calculate net_income, per categories.category_group, as revenue - cost of revenue - discretionary_expenses - non_discretionary_expenses
 def calculate_net_income(df):
-    income_categories = ['Salary', 'Rental income']
-    income = df[df['Category'].isin(income_categories)]['specified_month_sum'].sum()
-    expenses = df[~df['Category'].isin(income_categories)]['specified_month_sum'].sum()
-    net_income = income - expenses
+    revenue = df[df['category_group'] == 'Revenue']['specified_month_sum'].sum()
+    cost_of_revenue = df[df['category_group'] == 'Cost of revenue']['specified_month_sum'].sum()
+    discretionary_expenses = df[df['category_group'] == 'Discretionary']['specified_month_sum'].sum()
+    non_discretionary_expenses = df[df['category_group'] == 'Non-discretionary']['specified_month_sum'].sum()
+
+    net_income = revenue - cost_of_revenue - discretionary_expenses - non_discretionary_expenses
     
     print_divider("Income and Expense Summary")
-    print(f"Total Income (Salary + Rental income): ${income:.2f}")
-    print(f"Total Expenses: ${expenses:.2f}")
-    print(f"Net Income: ${net_income:.2f}")
+    print(f"Revenue:                     ${revenue:,.2f}")
+    print(f"- Cost of Revenue:            ${cost_of_revenue:,.2f}")
+    print(f"- Discretionary Expenses:     ${discretionary_expenses:,.2f}")
+    print(f"- Non-Discretionary Expenses: ${non_discretionary_expenses:,.2f}")
+    print("----------------------------------------")
+    print(f"Net Income:                   ${net_income:,.2f}")
 
     return net_income
 
@@ -62,68 +68,6 @@ def get_user_specified_date():
                 print("Invalid year or month. Please try again.")
         except ValueError:
             print("Invalid input. Please enter numbers only.")
-
-def main(year, month):
-    """
-    Main function to visualize and analyze financial data for a specified month.
-
-    This function:
-    1. Connects to the database and retrieves the month summary data.
-    2. Prints a summary of the specified month's financial data.
-    3. Calculates and displays the net income for the month.
-    4. Display the month's goals and goal breakdown items if they exist.
-    5. Display the goal progress as the breakdown item's amount minus the category total.
-    6. Creates a bar plot comparing specified month sum with P50 and P85 markers for each category.
-    7. Saves the plot as an image file and opens it in the default web browser.
-
-    The function excludes income categories (Salary and Rental income) from the visualization
-    to focus on expense categories.
-
-    Args:
-    year (int): The year for which to generate the report.
-    month (int): The month (1-12) for which to generate the report.
-    """
-    db_name = 'budgeting-tool.db'
-
-    conn = duckdb.connect(db_name)
-
-    # Use the provided year and month instead of asking for user input
-    df = get_month_summary(conn, year, month)
-    
-    # Get the month name from the dataframe
-    month_name = df['Month'].iloc[0]
-    
-    # Update output filename to include month and year
-    output_file = f'spending_comparison_{month_name}_{year}.png'
-    
-    print_divider(f"Month Summary - {month_name} {year}")
-    print(df.drop(columns=['Month', 'Year']))  # Drop Month and Year columns from display
-
-    net_income = calculate_net_income(df)
-
-    excluded_categories = ['Salary', 'Rental income']
-    df_filtered = df[~df['Category'].isin(excluded_categories)].sort_values('specified_month_sum', ascending=False)
-
-    # Remove these lines:
-    # goals = display_goals_and_breakdown_items(conn, year, month)
-    # display_goal_progress(conn, year, month, df, goals)
-
-    # Add this line instead:
-    display_goal_progress(conn, year, month)
-    
-    create_plot(df_filtered)
-
-    plt.savefig(output_file, dpi=300, bbox_inches='tight')
-    
-    print_divider("Plot Generation")
-    print(f"Plot saved as {output_file}")
-    full_path = os.path.abspath(output_file)
-    print(f"File exists: {os.path.exists(output_file)}")
-    print(f"Full path: {full_path}")
-    
-    webbrowser.open(f'file://{full_path}')
-
-    conn.close()
 
 def display_goals_and_breakdown_items(conn, year, month):
     """
@@ -194,3 +138,56 @@ def display_goal_progress(conn, year, month):
             
     else:
         print(f"No goal items found for {year}-{month:02d}.")
+
+def main(year, month):
+    """
+    Main function to visualize and analyze financial data for a specified month.
+
+    This function:
+    1. Connects to the database and retrieves the month summary data.
+    2. Prints a summary of the specified month's financial data.
+    3. Calculates and displays the net income for the month.
+    4. Display the month's goals and goal breakdown items if they exist.
+    5. Display the goal progress as the breakdown item's amount minus the category total.
+    6. Creates a bar plot comparing specified month sum with P50 and P85 markers for each category.
+    7. Saves the plot as an image file and opens it in the default web browser.
+
+    The function excludes income categories (Salary and Rental income) from the visualization
+    to focus on expense categories.
+
+    Args:
+    year (int): The year for which to generate the report.
+    month (int): The month (1-12) for which to generate the report.
+    """
+    db_name = 'budgeting-tool.db'
+    conn = duckdb.connect(db_name)
+
+    # Use the provided year and month instead of asking for user input
+    df = get_month_summary(conn, year, month)
+    
+    # Get the month name from the dataframe
+    month_name = df['Month'].iloc[0]
+    output_file = f'spending_comparison_{month_name}_{year}.png'
+    
+    print_divider(f"Month Summary - {month_name} {year}")
+    print(df.drop(columns=['Month', 'Year']))  # Drop Month and Year columns from display
+
+    net_income = calculate_net_income(df)
+
+    df_filtered = df[df['category_group'] != 'Revenue'].sort_values('specified_month_sum', ascending=False)
+
+    display_goal_progress(conn, year, month)
+    
+    create_plot(df_filtered)
+
+    plt.savefig(output_file, dpi=300, bbox_inches='tight')
+    
+    print_divider("Plot Generation")
+    print(f"Plot saved as {output_file}")
+    full_path = os.path.abspath(output_file)
+    print(f"File exists: {os.path.exists(output_file)}")
+    print(f"Full path: {full_path}")
+    
+    webbrowser.open(f'file://{full_path}')
+
+    conn.close()
