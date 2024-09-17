@@ -113,34 +113,33 @@ category_map = {
 }
 populate_table(db_name, table_name, category_map.items(), ['keyword VARCHAR PRIMARY KEY', 'category VARCHAR'])
 
-global_category_list = [
-    'Amazon',
-    'Amusement',
-    'Automotive',
-    'Drink',
-    'Education',
-    'Entertainment',
-    'Fees & Adjustments',
-    'Food & Drink',
-    'Gas',
-    'Gifts & Donations',
-    'Groceries',
-    'Health & Wellness',
-    'Home',
-    'Kat spending',
-    'Kids',
-    'Misc',
-    'Monthly fixed cost',
-    'Monthly mortgage expense',
-    'Monthly property expense',
-    'Rental income',
-    'Salary',
-    'Shopping',
-    'Transportation',
-    'Travel',
-    'Vince spending'
-]
+global_category_list = {
+    'Amazon':"Discretionary",
+    'Amusement':"Discretionary",
+    'Automotive':"Non-discretionary",
+    'Drink':"Discretionary",
+    'Education':"Non-discretionary",
+    'Entertainment':"Discretionary",
+    'Fees & Adjustments':"Non-discretionary",
+    'Food & Drink':"Discretionary",
+    'Gas':"Discretionary",
+    'Gifts & Donations':"Discretionary",
+    'Groceries':"Non-discretionary",
+    'Health & Wellness':"Non-discretionary",
+    'Home':"Non-discretionary",
+    'Kat spending':"Discretionary",
+    'Kids':"Non-discretionary",
+    'Misc':"Misc",
+    'Monthly fixed cost':"Non-discretionary",
+    'Monthly mortgage expense':"Cost of revenue",
+    'Monthly property expense':"Cost of revenue",
+    'Rental income':"Revenue",
+    'Salary':"Revenue",
+    'Shopping':"Discretionary",
+    'Transportation':"Non-discretionary",
+    'Travel':"Discretionary",
+    'Vince spending':"Discretionary"
+}
 
 table_name = 'categories'
-#create_and_insert_list(db_name, table_name, global_category_list)
-populate_table(db_name, table_name, global_category_list, ['category VARCHAR PRIMARY KEY'])
+populate_table(db_name, table_name, global_category_list, ['category VARCHAR PRIMARY KEY','category_group VARCHAR'])
