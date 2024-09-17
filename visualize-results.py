@@ -3,7 +3,7 @@ import pandas as pd
 import duckdb
 import matplotlib.pyplot as plt
 import webbrowser
-from db_operations import query_and_return_df, get_month_summary, execute_query
+from db_operations import query_and_return_df, get_month_summary, execute_query, get_active_breakdowns, get_breakdown_items, get_actual_spending
 import math
 import json
 
@@ -175,41 +175,17 @@ def display_goal_progress(conn, year, month):
     print_divider("Goal Progress")
 
     # Step 1: Retrieve active breakdowns for the specified month
-    active_breakdowns_query = """
-    SELECT id, description
-    FROM surplus_and_deficit_breakdowns
-    WHERE effective_date <= make_date(?, ?, 1)
-      AND (terminal_date IS NULL OR terminal_date >= make_date(?, ?, 1))
-    """
-    active_breakdowns = query_and_return_df(conn, active_breakdowns_query, [year, month, year, month])
+    active_breakdowns = get_active_breakdowns(conn, year, month)
 
     if active_breakdowns.empty:
         print(f"No active goals found for {year}-{month:02d}.")
         return
 
     # Step 2 & 3: Retrieve and sum up breakdown items for active breakdowns
-    breakdown_items_query = """
-    SELECT description, SUM(amount) as goal_amount
-    FROM surplus_and_deficit_breakdown_items
-    WHERE surplus_and_deficit_breakdown_id IN (
-        SELECT id
-        FROM surplus_and_deficit_breakdowns
-        WHERE effective_date <= make_date(?, ?, 1)
-          AND (terminal_date IS NULL OR terminal_date >= make_date(?, ?, 1))
-    )
-    GROUP BY description
-    """
-    goals = query_and_return_df(conn, breakdown_items_query, [year, month, year, month])
+    goals = get_breakdown_items(conn, year, month)
 
     # Retrieve actual spending for the month
-    actual_spending_query = """
-    SELECT Category, SUM(Amount) as actual_amount
-    FROM consolidated_transactions
-    WHERE strftime('%Y', "Transaction Date") = ?
-      AND strftime('%m', "Transaction Date") = ?
-    GROUP BY Category
-    """
-    actual_spending = query_and_return_df(conn, actual_spending_query, [str(year), str(month).zfill(2)])
+    actual_spending = get_actual_spending(conn, year, month)
 
     # Step 4: Calculate and display goal progress
     if not goals.empty:

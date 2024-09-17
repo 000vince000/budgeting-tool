@@ -333,3 +333,36 @@ def check_recurring_transaction(conn, description, amount, transaction_date):
       AND "Transaction Date" != ?
     """
     return execute_scalar_query(conn, query, [description, amount, transaction_date])
+
+def get_active_breakdowns(conn, year, month):
+    query = """
+    SELECT id, description
+    FROM surplus_and_deficit_breakdowns
+    WHERE effective_date <= make_date(?, ?, 1)
+      AND (terminal_date IS NULL OR terminal_date >= make_date(?, ?, 1))
+    """
+    return query_and_return_df(conn, query, [year, month, year, month])
+
+def get_breakdown_items(conn, year, month):
+    query = """
+    SELECT description, SUM(amount) as goal_amount
+    FROM surplus_and_deficit_breakdown_items
+    WHERE surplus_and_deficit_breakdown_id IN (
+        SELECT id
+        FROM surplus_and_deficit_breakdowns
+        WHERE effective_date <= make_date(?, ?, 1)
+          AND (terminal_date IS NULL OR terminal_date >= make_date(?, ?, 1))
+    )
+    GROUP BY description
+    """
+    return query_and_return_df(conn, query, [year, month, year, month])
+
+def get_actual_spending(conn, year, month):
+    query = """
+    SELECT Category, SUM(Amount) as actual_amount
+    FROM consolidated_transactions
+    WHERE strftime('%Y', "Transaction Date") = ?
+      AND strftime('%m', "Transaction Date") = ?
+    GROUP BY Category
+    """
+    return query_and_return_df(conn, query, [str(year), str(month).zfill(2)])
