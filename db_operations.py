@@ -13,7 +13,7 @@ def execute_query(conn, query, params=None):
         else:
             conn.execute(query)
     except Exception as e:
-        print(f"Error executing query: {query}")
+        print(f"Error executing query: {query}, params: {params}")
         print(f"Error message: {str(e)}")
         raise
 
@@ -109,7 +109,7 @@ def get_latest_month(conn):
 
 def fetch_transactions(conn, category, year, month):
     query = """
-    SELECT id, "Transaction Date", Description, Amount, Category
+    SELECT id, Card, "Transaction Date", Description, Amount, Category
     FROM consolidated_transactions
     WHERE Category = ?
       AND strftime('%Y', "Transaction Date") = ?
@@ -154,7 +154,7 @@ def insert_adjustment_transaction(conn, transaction_date, description, amount, c
     INSERT INTO consolidated_transactions ("Transaction Date", Description, Amount, Category)
     VALUES (?, ?, ?, ?)
     """
-    conn.execute(query, (transaction_date, description, amount, category))
+    execute_query(conn, query, (transaction_date, description, amount, category))
     conn.commit()
 
 def get_month_summary(conn, year, month):
@@ -166,7 +166,7 @@ def get_month_summary(conn, year, month):
 def insert_vendor_category_mapping(conn, vendor, category):
     # Remove the transaction handling from this function
     category_check_query = "SELECT COUNT(*) FROM categories WHERE category = ?"
-    result = conn.execute(category_check_query, [category]).fetchone()
+    result = execute_query(conn, category_check_query, [category]).fetchone()
     if result[0] == 0:
         raise ValueError(f"Category '{category}' does not exist in the categories table.")
 
@@ -175,7 +175,7 @@ def insert_vendor_category_mapping(conn, vendor, category):
     INSERT INTO vendor_category_mapping (vendor, category)
     VALUES (?, ?)
     """
-    conn.execute(insert_query, [vendor, category])
+    execute_query(conn, insert_query, [vendor, category])
     print(f"Vendor '{vendor}' successfully mapped to category '{category}'")
 
 def get_transactions_by_vendor(conn, vendor):
@@ -205,7 +205,7 @@ def recategorize_transactions(conn, transaction_ids, new_category):
 
     for transaction_id in transaction_ids:
         old_category_query = "SELECT Category FROM consolidated_transactions WHERE id = ?"
-        old_category = conn.execute(old_category_query, [transaction_id]).fetchone()[0]
+        old_category = execute_query(conn, old_category_query, [transaction_id]).fetchone()[0]
 
         memo_addition = f". Recategorized by user from {old_category}"
         if new_category is None:
@@ -232,7 +232,7 @@ def get_vendor_category_mapping(conn, vendor):
         FROM vendor_category_mapping 
         WHERE vendor = ?
         """
-        result = conn.execute(query, [vendor]).fetchone()
+        result = execute_query(conn, query, [vendor]).fetchone()
         return result[0] if result else None
     except Exception as e:
         print(f"An error occurred while retrieving vendor-category mapping: {str(e)}")
@@ -245,7 +245,7 @@ def insert_surplus_deficit_breakdown(conn, description, breakdown, effective_dat
         VALUES (?, ?, ?)
         RETURNING id
         """
-        result = conn.execute(query, [description, breakdown, effective_date]).fetchone()
+        result = execute_query(conn, query, [description, breakdown, effective_date]).fetchone()
         conn.commit()
         print("Surplus/Deficit Breakdown inserted successfully.")
         return result[0]  # Return the id of the inserted row
@@ -374,3 +374,32 @@ def get_goals_and_breakdown_items(conn, year, month):
     WHERE date = make_date(?, ?, 1)
     """
     return query_and_return_df(conn, query, [year, month])
+
+def update_transaction_amount(conn, transaction_id, new_amount):
+    query = """
+    UPDATE consolidated_transactions
+    SET Amount = ?
+    WHERE id = ?
+    """
+    execute_query(conn, query, (new_amount, transaction_id))
+
+def update_transaction_memo(conn, transaction_id, new_memo):
+    query = """
+    UPDATE consolidated_transactions
+    SET Memo = ?
+    WHERE id = ?
+    """
+    execute_query(conn, query, (new_memo, transaction_id))
+
+def get_next_sequence_value(conn, sequence_name):
+    query = f"SELECT nextval('{sequence_name}')"
+    result = conn.execute(query).fetchone()
+    return result[0] if result else None
+
+def insert_amortized_transaction(conn, transaction_id, card, transaction_date, description, category, amount, memo):
+    query = """
+    INSERT INTO consolidated_transactions (id, card, "Transaction Date", Description, Category, Amount, Memo)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    """
+    execute_query(conn, query, (transaction_id, card, transaction_date, description, category, amount, memo))
+    return transaction_id
