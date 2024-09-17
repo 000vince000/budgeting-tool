@@ -1,3 +1,4 @@
+import pandas as pd  # Add this line at the top of the file
 from datetime import datetime, date
 from dateutil.relativedelta import relativedelta
 
