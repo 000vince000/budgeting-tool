@@ -2,6 +2,9 @@ import duckdb
 import os
 import db_operations
 
+def create_table(conn, table_name, columns):
+    db_operations.execute_query(conn, f"CREATE TABLE IF NOT EXISTS {table_name} ({', '.join(columns)})")
+
 def create_table_with_sequence(conn, table_name, columns, unique_index_columns=None):
     create_sequence(conn, table_name)
     create_table(conn, table_name, columns)
