@@ -366,3 +366,11 @@ def get_actual_spending(conn, year, month):
     GROUP BY Category
     """
     return query_and_return_df(conn, query, [str(year), str(month).zfill(2)])
+
+def get_goals_and_breakdown_items(conn, year, month):
+    query = """
+    SELECT category, description, amount
+    FROM surplus_and_deficit_breakdown_items
+    WHERE date = make_date(?, ?, 1)
+    """
+    return query_and_return_df(conn, query, [year, month])

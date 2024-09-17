@@ -3,7 +3,7 @@ import pandas as pd
 import duckdb
 import matplotlib.pyplot as plt
 import webbrowser
-from db_operations import query_and_return_df, get_month_summary, execute_query, get_active_breakdowns, get_breakdown_items, get_actual_spending
+from db_operations import query_and_return_df, get_month_summary, execute_query, get_active_breakdowns, get_breakdown_items, get_actual_spending, get_goals_and_breakdown_items
 import math
 import json
 
@@ -136,14 +136,7 @@ def display_goals_and_breakdown_items(conn, year, month):
     """
     print_divider("Goals and Breakdown Items")
 
-    # Query to get goals for the specified month
-    query = """
-    SELECT category, description, amount
-    FROM surplus_and_deficit_breakdown_items
-    WHERE date = make_date(?, ?, 1)
-    """
-    
-    result = query_and_return_df(conn, query, [year, month])
+    result = get_goals_and_breakdown_items(conn, year, month)
     
     if not result.empty:
         print(f"Goals for {year}-{month:02d}:")
