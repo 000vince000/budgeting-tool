@@ -1,6 +1,7 @@
 import db_operations
 from helpers import print_divider, print_dataframe, get_user_input, get_user_choice
 from collections import defaultdict
+from dateutil.relativedelta import relativedelta
 
 def dig_into_category(conn, year, month):
     categories = sorted(db_operations.get_global_categories_from_db(conn))
@@ -25,11 +26,58 @@ def dig_into_category(conn, year, month):
         print(f"\nTransactions for {selected_category} in {year}-{month:02d}:")
         print_dataframe(df)
         
-        while get_user_input("\nDo you want to recategorize any transaction? (y/n): ", str, lambda x: x.lower() in ['y', 'n']).lower() == 'y':
-            recategorize_transaction(conn, df, categories, selected_category)
-            df = db_operations.fetch_transactions(conn, selected_category, year, month)
-            print("\nUpdated transactions:")
-            print_dataframe(df)
+        while True:
+            action = get_user_choice("\nDo you want to: \n1. Recategorize a transaction \n2. Amortize a transaction \n3. Go back\nEnter your choice: ", range(1, 4))
+            
+            if action == 1:
+                recategorize_transaction(conn, df, categories, selected_category)
+                df = db_operations.fetch_transactions(conn, selected_category, year, month)
+                print("\nUpdated transactions:")
+                print_dataframe(df)
+            elif action == 2:
+                amortize_transaction(conn, df, year, month)
+                df = db_operations.fetch_transactions(conn, selected_category, year, month)
+                print("\nUpdated transactions:")
+                print_dataframe(df)
+            else:
+                break
+
+def amortize_transaction(conn, df, year, month):
+    transaction_id = get_user_input("Enter the ID of the transaction to amortize: ", int, lambda x: x in df['id'].values)
+    months = get_user_input("How many months would you like to amortize it over? ", int, lambda x: x > 0)
+    
+    transaction = df[df['id'] == transaction_id].iloc[0]
+    card = transaction.get('Card', None)  # Use None if 'Card' is not present
+    amount = transaction['Amount']
+    description = transaction['Description']
+    category = transaction['Category']
+    original_date = transaction['Transaction Date']
+    memo = transaction.get('Memo', '')
+    monthly_amount = amount / months
+    
+    try:
+        conn.execute("BEGIN TRANSACTION")
+        
+        # Update the original transaction
+        db_operations.update_transaction_amount(conn, transaction_id, monthly_amount)
+        new_memo = f"{memo} 1/{months} amortized transaction."
+        db_operations.update_transaction_memo(conn, transaction_id, new_memo)
+        
+        # Create new transactions for the remaining months
+        inserted_ids = []
+        for i in range(1, months):
+            new_date = original_date + relativedelta(months=i)
+            new_memo = f"{memo} {i+1}/{months} amortized transaction. Original transaction ID: {transaction_id}"
+            new_id = db_operations.get_next_sequence_value(conn, 'consolidated_transactions_id_seq')
+            db_operations.insert_amortized_transaction(conn, new_id, card, new_date, description, category, monthly_amount, new_memo)
+            inserted_ids.append(new_id)
+        
+        conn.commit()
+        print(f"Transaction {transaction_id} has been amortized over {months} months.")
+    except Exception as e:
+        conn.rollback()
+        print(f"An error occurred while amortizing the transaction: {str(e)}")
+        print("Rolling back changes...")
 
 def show_p95_expensive_nonrecurring(conn, year, month):
     print_divider("95th Percentile Most Expensive Non-recurring Spendings")
