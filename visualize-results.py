@@ -6,6 +6,7 @@ import webbrowser
 from db_operations import query_and_return_df, get_month_summary, execute_query, get_active_breakdowns, get_breakdown_items, get_actual_spending, get_goals_and_breakdown_items
 import math
 import json
+import hashlib  # Add this import
 
 def print_divider(title):
     print("\n" + "=" * 40)
@@ -93,51 +94,63 @@ def display_goals_and_breakdown_items(conn, year, month):
 
     return result
 
-def display_single_goal_progress(description, goal_amount, actual_amount):
-    progress = goal_amount - actual_amount
+def display_single_goal_progress(description, accumulation_amount, reduction):
+    progress = accumulation_amount + reduction
     print(f"{description}:")
-    print(f"  Goal: ${goal_amount:.2f}")
-    print(f"  Actual: ${actual_amount:.2f}")
-    print(f"  Progress: ${progress:.2f}")
+    print(f"  Gross Accumulation: ${accumulation_amount:.2f}")
+    print(f"  Reduction: ${reduction:.2f}")
+    print(f"  Net Accumulation: ${progress:.2f}")
 
 def display_goal_progress(conn, year, month):
-    """
-    Display the goal progress based on active breakdowns for the specified month.
-
-    Args:
-    conn: Database connection object
-    year (int): The year to display goal progress for
-    month (int): The month to display goal progress for
-    """
     print_divider("Goal Progress")
 
-    # Step 1: Retrieve active breakdowns for the specified month
     active_breakdowns = get_active_breakdowns(conn, year, month)
 
     if active_breakdowns.empty:
         print(f"No active goals found for {year}-{month:02d}.")
         return
 
-    # Step 2 & 3: Retrieve and sum up breakdown items for active breakdowns
-    goals = get_breakdown_items(conn, year, month)
-
-    # Retrieve actual spending for the month
+    accumulations = get_breakdown_items(conn, year, month)
     actual_spending = get_actual_spending(conn, year, month)
 
-    # Step 4: Calculate and display goal progress
-    if not goals.empty:
-        for _, goal in goals.iterrows():
-            description = goal['description']
-            goal_amount = goal['goal_amount']
-            
-            # Find the actual spending for this category in the month summary
-            actual_amount = actual_spending[actual_spending['Category'] == description]['actual_amount'].values
-            actual_amount = actual_amount[0] if len(actual_amount) > 0 else 0
-            
-            display_single_goal_progress(description, goal_amount, actual_amount)
-            
+    if not accumulations.empty:
+        # First, display Savings and Investment
+        for category in ['Savings', 'Investment']:
+            if category in accumulations['description'].values:
+                accumulation = accumulations[accumulations['description'] == category]['accumulation'].values[0]
+                latest_amount = accumulations[accumulations['description'] == category]['latest_amount'].values[0]
+                print(f"{category}: ${accumulation:,.2f}")
+
+                # Calculate 10-year projection with monthly accumulation
+                cagr = 0.03 if category == 'Savings' else 0.08  # Reverted back to 0.03 and 0.08
+                total_months = 10 * 12
+                projection = 0
+                for month in range(total_months):
+                    projection += latest_amount
+                    projection *= (1 + cagr / 12)  # Apply monthly growth rate
+
+                print(f"  10-year projection (with {cagr*100:.1f}% CAGR and monthly ${latest_amount:,.2f} contribution): ${projection:,.2f}")
+
+        # Then display other categories
+        for _, accumulation in accumulations.iterrows():
+            description = accumulation['description']
+            if description not in ['Savings', 'Investment']:
+                accumulation_amount = accumulation['accumulation']
+                
+                reduction = actual_spending[actual_spending['Category'] == description]['actual_amount'].values
+                reduction = reduction[0] if len(reduction) > 0 else 0
+                
+                display_single_goal_progress(description, accumulation_amount, reduction)
     else:
         print(f"No goal items found for {year}-{month:02d}.")
+
+def get_file_hash(filename):
+    """Calculate the SHA-256 hash of a file."""
+    sha256_hash = hashlib.sha256()
+    with open(filename, "rb") as f:
+        for byte_block in iter(lambda: f.read(4096), b""):
+            sha256_hash.update(byte_block)
+    return sha256_hash.hexdigest()
 
 def main(year, month):
     """
@@ -169,25 +182,37 @@ def main(year, month):
     month_name = df['Month'].iloc[0]
     output_file = f'spending_comparison_{month_name}_{year}.png'
     
-    print_divider(f"Month Summary - {month_name} {year}")
-    print(df.drop(columns=['Month', 'Year']))  # Drop Month and Year columns from display
-
-    net_income = calculate_net_income(df)
+    # print_divider(f"Month Summary - {month_name} {year}")
+    # print(df.drop(columns=['Month', 'Year']))  # Drop Month and Year columns from display
+ 
+    calculate_net_income(df)
 
     df_filtered = df[df['category_group'] != 'Revenue'].sort_values('specified_month_sum', ascending=False)
 
     display_goal_progress(conn, year, month)
-    
     create_plot(df_filtered)
 
-    plt.savefig(output_file, dpi=300, bbox_inches='tight')
+    # Save the plot to a temporary file
+    temp_file = 'temp_plot.png'
+    plt.savefig(temp_file, dpi=300, bbox_inches='tight')
     
-    print_divider("Plot Generation")
-    print(f"Plot saved as {output_file}")
+    # Calculate hash of the new plot
+    new_hash = get_file_hash(temp_file)
+
+    # Check if the output file already exists
+    if os.path.exists(output_file):
+        existing_hash = get_file_hash(output_file)
+        if new_hash == existing_hash:
+            print(f"Plot unchanged. Keeping existing file: {output_file}")
+            os.remove(temp_file)  # Remove the temporary file
+        else:
+            os.replace(temp_file, output_file)
+            print(f"Plot updated. Saved as: {output_file}")
+    else:
+        os.rename(temp_file, output_file)
+        print(f"New plot saved as: {output_file}")
+
     full_path = os.path.abspath(output_file)
-    print(f"File exists: {os.path.exists(output_file)}")
-    print(f"Full path: {full_path}")
-    
     webbrowser.open(f'file://{full_path}')
 
     conn.close()

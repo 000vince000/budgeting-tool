@@ -345,17 +345,30 @@ def get_active_breakdowns(conn, year, month):
 
 def get_breakdown_items(conn, year, month):
     query = """
-    SELECT description, SUM(amount) as goal_amount
-    FROM surplus_and_deficit_breakdown_items
-    WHERE surplus_and_deficit_breakdown_id IN (
+    WITH latest_amounts AS (
+        SELECT description, amount AS latest_amount, 
+               ROW_NUMBER() OVER (PARTITION BY description ORDER BY date DESC) AS rn
+        FROM surplus_and_deficit_breakdown_items
+        WHERE surplus_and_deficit_breakdown_id IN (
+            SELECT id
+            FROM surplus_and_deficit_breakdowns
+            WHERE make_date(?, ?, 1) between effective_date and coalesce(terminal_date, '2099-01-01')
+        )
+    )
+    SELECT sdi.description, 
+           SUM(sdi.amount) as accumulation,
+           la.latest_amount
+    FROM surplus_and_deficit_breakdown_items sdi
+    JOIN latest_amounts la ON sdi.description = la.description AND la.rn = 1
+    WHERE sdi.surplus_and_deficit_breakdown_id IN (
         SELECT id
         FROM surplus_and_deficit_breakdowns
-        WHERE effective_date <= make_date(?, ?, 1)
-          AND (terminal_date IS NULL OR terminal_date >= make_date(?, ?, 1))
+        WHERE make_date(?, ?, 1) between effective_date and coalesce(terminal_date, '2099-01-01')
+        AND make_date(?, ?, 1) >= sdi.date
     )
-    GROUP BY description
+    GROUP BY sdi.description, la.latest_amount
     """
-    return query_and_return_df(conn, query, [year, month, year, month])
+    return query_and_return_df(conn, query, [year, month, year, month, year, month])
 
 def get_actual_spending(conn, year, month):
     query = """
