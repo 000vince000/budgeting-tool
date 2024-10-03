@@ -9,9 +9,10 @@ def get_db_connection(db_name):
 def execute_query(conn, query, params=None):
     try:
         if params:
-            conn.execute(query, params)
+            result = conn.execute(query, params)
         else:
-            conn.execute(query)
+            result = conn.execute(query)
+        return result
     except Exception as e:
         print(f"Error executing query: {query}, params: {params}")
         print(f"Error message: {str(e)}")
@@ -192,7 +193,6 @@ def get_transactions_by_vendor(conn, vendor):
     return query_and_return_df(conn, query, [vendor_pattern])
 
 def recategorize_transactions(conn, transaction_ids, new_category):
-    # Remove the transaction handling from this function
     query = """
     UPDATE consolidated_transactions
     SET Category = ?,
@@ -205,13 +205,17 @@ def recategorize_transactions(conn, transaction_ids, new_category):
 
     for transaction_id in transaction_ids:
         old_category_query = "SELECT Category FROM consolidated_transactions WHERE id = ?"
-        old_category = execute_query(conn, old_category_query, [transaction_id]).fetchone()[0]
-
+        result = execute_query(conn, old_category_query, [transaction_id])
+        old_category = result.fetchone()
+        if old_category is None:
+            print(f"WARNING: No transaction found with id {transaction_id}")
+            continue
+        old_category = old_category[0]
         memo_addition = f". Recategorized by user from {old_category}"
         if new_category is None:
             memo_addition += f". Set to NULL by user from {old_category}"
 
-        conn.execute(query, (new_category, memo_addition, memo_addition, transaction_id))
+        execute_query(conn, query, (new_category, memo_addition, memo_addition, transaction_id))
 
     print(f"Successfully recategorized {len(transaction_ids)} transactions to '{new_category}'")
 

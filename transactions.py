@@ -102,16 +102,16 @@ def review_extraordinary_spendings(conn, year, month):
     # Step 2: Order by (specified_month_sum - p50_monthly_sum) high to low
     df['difference'] = df['specified_month_sum'] - df['p50_monthly_sum']
     df_sorted = df.sort_values('difference', ascending=False)
-    
+
     # Exclude specified categories
     excluded_categories = ['Rental income', 'Salary', 'Monthly fixed cost', 'Monthly property expense']
-    df_sorted = df_sorted[~df_sorted['Category'].isin(excluded_categories)]
+    df_sorted = df_sorted[~df_sorted['category'].isin(excluded_categories)]
     
     # Step 3-5: Fetch transactions and store in memory
     extraordinary_transactions = defaultdict(list)
     
     for _, row in df_sorted.iterrows():
-        category = row['Category']
+        category = row['category']
         
         # Calculate P85 for this category and month
         p85 = db_operations.get_p85_for_category(conn, category, year, month)
