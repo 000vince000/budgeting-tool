@@ -1,7 +1,6 @@
 import duckdb
 from datetime import datetime
 import pandas as pd
-
 def get_db_connection(db_name):
     conn = duckdb.connect(db_name)
     return conn
@@ -258,6 +257,18 @@ def insert_surplus_deficit_breakdown(conn, description, breakdown, effective_dat
         print(f"An error occurred while inserting Surplus/Deficit Breakdown: {str(e)}")
         raise
 
+def get_subtotal_by_category_group_for_month(conn, year, month):
+    query = """
+    SELECT category_group, SUM(t.amount) as subtotal
+    FROM consolidated_transactions t
+    JOIN categories c using (category)
+    WHERE EXTRACT(YEAR FROM t."Transaction Date") = ?
+    AND EXTRACT(MONTH FROM t."Transaction Date") = ?
+    AND category is not null
+    GROUP BY 1
+    """
+    return query_and_return_df(conn, query, [year, month])
+
 def get_net_income_for_month(conn, year, month):
     query = """
     SELECT SUM(amount) as net_income
@@ -266,7 +277,7 @@ def get_net_income_for_month(conn, year, month):
     AND EXTRACT(MONTH FROM "Transaction Date") = ?
     AND category is not null
     """
-    result = conn.execute(query, [year, month]).fetchone()
+    result = execute_query(conn, query, [year, month]).fetchone()
     return result[0] if result[0] is not None else 0
 
 def insert_surplus_deficit_breakdown_item(conn, breakdown_id, category, description, amount, date):
@@ -340,12 +351,20 @@ def check_recurring_transaction(conn, description, amount, transaction_date):
 
 def get_active_breakdowns(conn, year, month):
     query = """
-    SELECT id, description
+    SELECT id, description, breakdown
     FROM surplus_and_deficit_breakdowns
     WHERE effective_date <= make_date(?, ?, 1)
       AND (terminal_date IS NULL OR terminal_date >= make_date(?, ?, 1))
     """
     return query_and_return_df(conn, query, [year, month, year, month])
+
+def get_breakdown_items_by_date(conn, year, month):
+    query = """
+    SELECT category, description
+    FROM surplus_and_deficit_breakdown_items
+    WHERE EXTRACT(YEAR FROM date) = ? AND EXTRACT(MONTH FROM date) = ?
+    """
+    return pd.read_sql_query(query, conn, params=[year, month])
 
 def get_breakdown_items(conn, year, month):
     query = """
