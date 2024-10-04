@@ -1,7 +1,10 @@
+from datetime import date, datetime
 import db_operations
 from helpers import print_divider, print_dataframe, get_user_input, get_user_choice
 from collections import defaultdict
 from dateutil.relativedelta import relativedelta
+import ast
+from decimal import Decimal
 
 def dig_into_category(conn, year, month):
     categories = sorted(db_operations.get_global_categories_from_db(conn))
@@ -216,7 +219,7 @@ def add_adjustment_transaction(conn, year, month):
 def set_goals(conn):
     print_divider("Setting a New Goal")
     description = input("Enter a description for this goal: ")
-    breakdown = get_goal_breakdown(conn)
+    breakdown = get_goal_breakdown_from_user(conn)
     if not breakdown:
         print("No goals set. Exiting goal setting.")
         return
@@ -229,7 +232,7 @@ def set_goals(conn):
     except Exception as e:
         print(f"Error adding goal or calculating monthly breakdowns: {str(e)}")
 
-def get_goal_breakdown(conn):
+def get_goal_breakdown_from_user(conn):
     breakdown = {}
     remaining_percentage = 100
     categories = ['Investment', 'Savings'] + sorted(db_operations.get_global_categories_from_db(conn))
@@ -277,10 +280,12 @@ def get_goal_breakdown(conn):
 
     return breakdown
 
-def calculate_and_conditionally_insert_monthly_breakdowns(conn, breakdown_id, breakdown, effective_date):
+def calculate_and_conditionally_insert_monthly_breakdowns(conn, breakdown_id, effective_date):
     valid_categories = set(db_operations.get_global_categories_from_db(conn))
     latest_transaction_date = db_operations.get_latest_transaction_date(conn)
-    
+    effective_date_year = int(effective_date.split('-')[0])
+    effective_date_month = int(effective_date.split('-')[1])
+    active_breakdown = db_operations.get_active_breakdowns(conn, effective_date_year, effective_date_month).iloc[0]
     current_date = datetime.strptime(effective_date, '%Y-%m-%d').date()
     end_date = latest_transaction_date.replace(day=1) + relativedelta(months=1) - relativedelta(days=1)
     today = date.today()
@@ -289,15 +294,19 @@ def calculate_and_conditionally_insert_monthly_breakdowns(conn, breakdown_id, br
         # Only process months that have ended
         if current_date.replace(day=1) + relativedelta(months=1) <= today:
             net_income = db_operations.get_net_income_for_month(conn, current_date.year, current_date.month)
-            for category_or_description, percentage in breakdown.items():
-                amount = net_income * percentage
+            breakdown = ast.literal_eval(active_breakdown['breakdown'])
+            for category_or_description, pct_breakdown in breakdown.items():
+                amount = net_income * Decimal(pct_breakdown)
                 if category_or_description in valid_categories:
                     category = description = category_or_description
                 else:
                     category, description = None, category_or_description
-                db_operations.insert_surplus_deficit_breakdown_item(
-                    conn, breakdown_id, category, description, amount, current_date
-                )
+
+                # check if the breakdown item count less than breakdown item count in the database
+                if len(db_operations.get_breakdown_items_by_date(conn, current_date.year, current_date.month)) < len(breakdown):
+                    db_operations.insert_surplus_deficit_breakdown_item(conn, breakdown_id, category, description, amount, current_date)
+                else:
+                    print(f"Breakdown item already exists for {current_date.year}-{current_date.month:02d}")
 
         current_date += relativedelta(months=1)
 
