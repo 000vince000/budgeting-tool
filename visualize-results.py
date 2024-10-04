@@ -3,8 +3,9 @@ import pandas as pd
 import duckdb
 import matplotlib.pyplot as plt
 import webbrowser
-from db_operations import query_and_return_df, get_month_summary, execute_query, get_active_breakdowns, get_breakdown_items, get_actual_spending, get_goals_and_breakdown_items
+from db_operations import query_and_return_df, get_month_summary, execute_query, get_active_breakdowns, get_breakdown_items, get_actual_spending, get_goals_and_breakdown_items, get_breakdown_items_by_date, get_subtotal_by_category_group_for_month
 import math
+from transactions import calculate_and_conditionally_insert_monthly_breakdowns
 import json
 import hashlib  # Add this import
 
@@ -38,19 +39,22 @@ def create_plot(df):
     plt.gca().yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'${int(x):,}'))
 
 # calculate net_income, per categories.category_group, as revenue - cost of revenue - discretionary_expenses - non_discretionary_expenses
-def calculate_net_income(df):
-    revenue = df[df['category_group'] == 'Revenue']['specified_month_sum'].sum()
-    cost_of_revenue = df[df['category_group'] == 'Cost of revenue']['specified_month_sum'].sum()
-    discretionary_expenses = df[df['category_group'] == 'Discretionary']['specified_month_sum'].sum()
-    non_discretionary_expenses = df[df['category_group'] == 'Non-discretionary']['specified_month_sum'].sum()
+def calculate_net_income(conn, year, month):
+    subtotal_by_category_group = get_subtotal_by_category_group_for_month(conn, year, month)
+    revenue = subtotal_by_category_group[subtotal_by_category_group['category_group'] == 'Revenue']['subtotal'].values[0]
+    cost_of_revenue = subtotal_by_category_group[subtotal_by_category_group['category_group'] == 'Cost of revenue']['subtotal'].values[0]
+    discretionary_expenses = subtotal_by_category_group[subtotal_by_category_group['category_group'] == 'Discretionary']['subtotal'].values[0]
+    non_discretionary_expenses = subtotal_by_category_group[subtotal_by_category_group['category_group'] == 'Non-discretionary']['subtotal'].values[0]
+    misc_expenses = subtotal_by_category_group[subtotal_by_category_group['category_group'] == 'Misc']['subtotal'].values[0]
 
-    net_income = revenue - cost_of_revenue - discretionary_expenses - non_discretionary_expenses
+    net_income = revenue + cost_of_revenue + discretionary_expenses + non_discretionary_expenses + misc_expenses
     
     print_divider("Income and Expense Summary")
     print(f"Revenue:                     ${revenue:,.2f}")
     print(f"- Cost of Revenue:            ${cost_of_revenue:,.2f}")
     print(f"- Discretionary Expenses:     ${discretionary_expenses:,.2f}")
     print(f"- Non-Discretionary Expenses: ${non_discretionary_expenses:,.2f}")
+    print(f"- Misc Expenses:              ${misc_expenses:,.2f}")
     print("----------------------------------------")
     print(f"Net Income:                   ${net_income:,.2f}")
 
@@ -109,6 +113,16 @@ def display_goal_progress(conn, year, month):
     if active_breakdowns.empty:
         print(f"No active goals found for {year}-{month:02d}.")
         return
+
+    #check if breakdown items exist for the given month
+    if get_breakdown_items_by_date(conn, year, month).empty:
+        # ask user if they want to insert the breakdown items
+        user_input = input(f"Insert breakdown items for {year}-{month:02d}? (y/n): ")
+        if user_input.lower() == 'y':
+            print(f"Inserting breakdown items for {year}-{month:02d}.")
+            calculate_and_conditionally_insert_monthly_breakdowns(conn, int(active_breakdowns.iloc[0]['id']), f"{year}-{month:02d}-01")
+    else:
+        print(f"Breakdown items found for {year}-{month:02d}.")
 
     accumulations = get_breakdown_items(conn, year, month)
     actual_spending = get_actual_spending(conn, year, month)
@@ -176,8 +190,8 @@ def main(year, month):
     conn = duckdb.connect(db_name)
 
     # Use the provided year and month instead of asking for user input
+    # TODO: query doesn't take into account positive data like Health for September 2024
     df = get_month_summary(conn, year, month)
-    
     # Get the month name from the dataframe
     month_name = df['Month'].iloc[0]
     output_file = f'spending_comparison_{month_name}_{year}.png'
@@ -185,7 +199,7 @@ def main(year, month):
     # print_divider(f"Month Summary - {month_name} {year}")
     # print(df.drop(columns=['Month', 'Year']))  # Drop Month and Year columns from display
  
-    calculate_net_income(df)
+    calculate_net_income(conn, year, month)
 
     df_filtered = df[df['category_group'] != 'Revenue'].sort_values('specified_month_sum', ascending=False)
 
