@@ -439,3 +439,25 @@ def insert_amortized_transaction(conn, transaction_id, card, transaction_date, d
     """
     execute_query(conn, query, (transaction_id, card, transaction_date, description, category, amount, memo))
     return transaction_id
+
+def flag_transaction(conn, transaction_id):
+    query = """
+    INSERT INTO flagged_transactions (transaction_id)
+    VALUES (?)
+    """
+    execute_query(conn, query, [transaction_id])  # Pass transaction_id as a list
+
+def get_flagged_transactions(conn):
+    query = """
+    SELECT id, "Transaction Date", Description, Amount, Category, Memo
+    FROM consolidated_transactions t
+    JOIN flagged_transactions f on t.id = f.transaction_id
+    """
+    return query_and_return_df(conn, query)
+
+def unflag_transaction(conn, transaction_id):
+    query = """
+    DELETE FROM flagged_transactions
+    WHERE transaction_id = ?
+    """
+    execute_query(conn, query, (transaction_id))

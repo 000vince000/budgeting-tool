@@ -122,6 +122,16 @@ def create_table_surplus_and_deficit_breakdown_items(conn):
     ]
     create_table_with_sequence(conn, table_name, columns, ["surplus_and_deficit_breakdown_id", "category", "date"])
 
+def create_table_flagged_transactions(conn):
+    table_name = "flagged_transactions"
+    columns = [
+        f"transaction_id BIGINT PRIMARY KEY",
+        "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+        f"FOREIGN KEY (transaction_id) REFERENCES consolidated_transactions(id)"
+    ]
+    create_table(conn, table_name, columns)
+    print(f"Table {table_name} created successfully")
+
 def create_schema_menu(conn):
     while True:
         print("\nCreate Schema Menu:")
@@ -130,9 +140,10 @@ def create_schema_menu(conn):
         print("3. Create current_budgets view")
         print("4. Create vendor_category_mapping table")
         print("5. Create surplus_and_deficit_breakdowns table")
-        print("6. Exit")
+        print("6. Create flagged_transactions table")  # Add this line
+        print("7. Exit")  # Update this line
         
-        choice = input("Enter your choice (1-6): ")
+        choice = input("Enter your choice (1-7): ")  # Update this line
         
         if choice == '1':
             create_table_consolidated_transactions(conn)
@@ -144,7 +155,9 @@ def create_schema_menu(conn):
             create_table_vendor_category_mapping(conn)
         elif choice == '5':
             create_table_surplus_and_deficit_breakdowns_and_items(conn)
-        elif choice == '6':
+        elif choice == '6':  # Add this block
+            create_table_flagged_transactions(conn)
+        elif choice == '7':  # Update this line
             break
         else:
             print("Invalid choice. Please try again.")

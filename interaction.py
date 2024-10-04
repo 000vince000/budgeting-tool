@@ -5,7 +5,8 @@ from datetime import datetime
 from helpers import print_ascii_title, get_user_specified_date, print_divider, print_numbered_list, get_user_choice
 from transactions import (dig_into_category, show_p95_expensive_nonrecurring,
                           review_extraordinary_spendings, set_budget,
-                          add_adjustment_transaction, set_goals)
+                          add_adjustment_transaction, set_goals,
+                          show_flagged_transactions)  # Add this import
 
 def run_visualize_script(year, month):
     script_path = os.path.join(os.path.dirname(__file__), 'visualize-results.py')
@@ -17,6 +18,7 @@ def run_visualize_script(year, month):
 def main_menu(conn, year, month):
     menu_options = [
         "See spending profile",
+        "See flagged transactions",  # New option
         "Dig into a specific category",
         "See 95th percentile most expensive nonrecurring spendings",
         "Review extraordinary spendings",
@@ -38,20 +40,22 @@ def main_menu(conn, year, month):
         if choice == 1:
             run_visualize_script(year, month)
         elif choice == 2:
-            dig_into_category(conn, year, month)
+            show_flagged_transactions(conn)  # New function call
         elif choice == 3:
-            show_p95_expensive_nonrecurring(conn, year, month)
+            dig_into_category(conn, year, month)
         elif choice == 4:
-            review_extraordinary_spendings(conn, year, month)
+            show_p95_expensive_nonrecurring(conn, year, month)
         elif choice == 5:
-            set_budget(conn)
+            review_extraordinary_spendings(conn, year, month)
         elif choice == 6:
-            add_adjustment_transaction(conn, year, month)
+            set_budget(conn)
         elif choice == 7:
-            set_goals(conn)
+            add_adjustment_transaction(conn, year, month)
         elif choice == 8:
-            return True  # Signal to change the analysis period
+            set_goals(conn)
         elif choice == 9:
+            return True  # Signal to change the analysis period
+        elif choice == 10:
             return False  # Signal to exit the program
 
 def main():

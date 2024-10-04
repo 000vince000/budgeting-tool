@@ -30,7 +30,7 @@ def dig_into_category(conn, year, month):
         print_dataframe(df)
         
         while True:
-            action = get_user_choice("\nDo you want to: \n1. Recategorize a transaction \n2. Amortize a transaction \n3. Go back\nEnter your choice: ", range(1, 4))
+            action = get_user_choice("\nDo you want to: \n1. Recategorize a transaction \n2. Flag a transaction \n3. Amortize a transaction \n4. Go back\nEnter your choice: ", range(1, 5))
             
             if action == 1:
                 recategorize_transaction(conn, df, categories, selected_category)
@@ -38,6 +38,9 @@ def dig_into_category(conn, year, month):
                 print("\nUpdated transactions:")
                 print_dataframe(df)
             elif action == 2:
+                ask_to_flag_transaction(conn, df)
+                print_dataframe(df)
+            elif action == 3:
                 amortize_transaction(conn, df, year, month)
                 df = db_operations.fetch_transactions(conn, selected_category, year, month)
                 print("\nUpdated transactions:")
@@ -322,6 +325,11 @@ def recategorize_transaction(conn, df, categories, selected_category):
         recategorize_all_vendor_transactions(conn, vendor, new_category)
     else:
         db_operations.recategorize_transaction(conn, transaction_id, new_category, selected_category)
+        # as a side effect, this will unflag the transaction if it was flagged
+        flagged_transactions = db_operations.get_flagged_transactions(conn)
+        if transaction_id in flagged_transactions['id'].values:
+            db_operations.unflag_transaction(conn, transaction_id)
+            print(f"Transaction {transaction_id} unflagged")
         print(f"Transaction {transaction_id} recategorized to {new_category or 'NULL (Excluded)'}")
 
 def recategorize_all_vendor_transactions(conn, vendor, new_category):
@@ -353,3 +361,46 @@ def validate_date(date_string):
     except ValueError:
         print("Invalid date format. Please use YYYY-MM-DD.")
         return False
+
+def flag_transaction(conn, df):
+    transaction_id = get_user_input("Enter the ID of the transaction to flag: ", int, lambda x: x in df['id'].values)
+    
+    try:
+        db_operations.flag_transaction(conn, transaction_id)
+        print(f"Transaction {transaction_id} has been flagged.")
+    except Exception as e:
+        print(f"An error occurred while flagging the transaction: {str(e)}")
+
+def ask_to_flag_transaction(conn, df):
+    transaction_id = get_user_input("Enter the ID of the transaction to flag: ", int, lambda x: x in df['id'].values)
+    try:
+        db_operations.flag_transaction(conn, transaction_id)
+        print(f"Transaction {transaction_id} has been flagged.")
+    except Exception as e:
+        print(f"An error occurred while flagging the transaction: {str(e)}")
+
+def show_flagged_transactions(conn):
+    print_divider("Flagged Transactions")
+    flagged_transactions = db_operations.get_flagged_transactions(conn)
+    
+    if flagged_transactions.empty:
+        print("No flagged transactions found.")
+    else:
+        print_dataframe(flagged_transactions)
+    
+    while True:
+        action = get_user_choice("\nDo you want to: \n1. Unflag a transaction \n2. Go back\nEnter your choice: ", range(1, 3))
+        
+        if action == 1:
+            transaction_id = get_user_input("Enter the ID of the transaction to unflag: ", int, lambda x: x in flagged_transactions['id'].values)
+            db_operations.unflag_transaction(conn, transaction_id)
+            print(f"Transaction {transaction_id} has been unflagged.")
+            flagged_transactions = db_operations.get_flagged_transactions(conn)
+            if flagged_transactions.empty:
+                print("No more flagged transactions.")
+                break
+            else:
+                print("\nUpdated flagged transactions:")
+                print_dataframe(flagged_transactions)
+        else:
+            break
