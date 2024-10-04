@@ -312,7 +312,7 @@ def calculate_and_conditionally_insert_monthly_breakdowns(conn, breakdown_id, ef
 
 def recategorize_transaction(conn, df, categories, selected_category):
     transaction_id = get_user_input("Enter the ID of the transaction to recategorize: ", int, lambda x: x in df['id'].values)
-    new_category_index = get_user_choice("\nEnter the number of the new category or Exclude option: ", range(1, len(categories) + 2))
+    new_category_index = get_user_choice("\nEnter the number of the new category or 27 as the Exclude option: ", range(1, len(categories) + 3))
     
     new_category = categories[new_category_index - 1] if new_category_index <= len(categories) else None
     transaction = df[df['id'] == transaction_id].iloc[0]
