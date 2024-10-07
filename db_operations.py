@@ -460,4 +460,4 @@ def unflag_transaction(conn, transaction_id):
     DELETE FROM flagged_transactions
     WHERE transaction_id = ?
     """
-    execute_query(conn, query, (transaction_id))
+    execute_query(conn, query, [transaction_id])
