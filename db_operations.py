@@ -1,6 +1,11 @@
 import duckdb
 from datetime import datetime
 import pandas as pd
+import warnings
+
+# Suppress specific UserWarning
+warnings.filterwarnings("ignore", message="pandas only supports SQLAlchemy connectable")
+
 def get_db_connection(db_name):
     conn = duckdb.connect(db_name)
     return conn
