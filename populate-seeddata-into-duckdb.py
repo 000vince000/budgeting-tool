@@ -75,6 +75,7 @@ category_map = {
     "CIAO GLORIA": "Drink",
     "CIAO  GLORIA": "Drink",
     "BITTERSWEET": "Drink",
+    "STARBUCKS": "Drink",
     "Netflix": "Entertainment",
     "Prime Video": "Entertainment",
     "Spotify": "Entertainment",
