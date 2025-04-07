@@ -6,7 +6,7 @@ from helpers import print_ascii_title, get_user_specified_date, print_divider, p
 from transactions import (dig_into_category, show_p95_expensive_nonrecurring,
                           review_extraordinary_spendings, set_budget,
                           add_adjustment_transaction, set_goals,
-                          show_flagged_transactions, dig_into_category_group)  # Add this import
+                          show_flagged_transactions, dig_into_category_group, search_transactions_by_keyword)  # Add this import
 
 def run_visualize_script(year, month):
     script_path = os.path.join(os.path.dirname(__file__), 'visualize-results.py')
@@ -18,7 +18,8 @@ def run_visualize_script(year, month):
 def main_menu(conn, year, month):
     menu_options = [
         "See spending profile",
-        "See flagged transactions",  # New option
+        "See flagged transactions",
+        "Search transactions by keyword",
         "Dig into a specific category",
         "Dig into a specific category group",
         "See 95th percentile most expensive nonrecurring spendings",
@@ -44,20 +45,22 @@ def main_menu(conn, year, month):
         elif choice == 2:
             show_flagged_transactions(conn)  # New function call
         elif choice == 3:
-            dig_into_category(conn, year, month)
+            search_transactions_by_keyword(conn, year, month)
         elif choice == 4:
-            dig_into_category_group(conn, year, month)
+            dig_into_category(conn, year, month)
         elif choice == 5:
-            show_p95_expensive_nonrecurring(conn, year, month)
+            dig_into_category_group(conn, year, month)
         elif choice == 6:
-            review_extraordinary_spendings(conn, year, month)
+            show_p95_expensive_nonrecurring(conn, year, month)
         elif choice == 7:
-            set_budget(conn)
+            review_extraordinary_spendings(conn, year, month)
         elif choice == 8:
-            add_adjustment_transaction(conn, year, month)
+            set_budget(conn)
         elif choice == 9:
-            set_goals(conn)
+            add_adjustment_transaction(conn, year, month)
         elif choice == 10:
+            set_goals(conn)
+        elif choice == 11:
             return True  # Signal to change the analysis period
         elif choice == 'x':
             return False  # Signal to exit the program

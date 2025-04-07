@@ -497,3 +497,17 @@ def add_memo_to_transaction(conn, transaction_id, new_memo):
     WHERE id = ?
     """
     execute_query(conn, query, (new_memo, transaction_id))  
+
+def search_transactions_by_keyword(conn, keyword, year, month):
+    # Add wildcards to the keyword parameter value rather than embedding ? in quotes
+    search_pattern = f"%{keyword}%"
+    
+    query = """
+    SELECT id, "Transaction Date", Description, Amount, Category, Memo
+    FROM consolidated_transactions
+    WHERE (Description LIKE ? OR Memo LIKE ?)
+      AND EXTRACT(YEAR FROM "Transaction Date") = ?
+      AND EXTRACT(MONTH FROM "Transaction Date") = ?
+    ORDER BY "Transaction Date" DESC
+    """
+    return query_and_return_df(conn, query, [search_pattern, search_pattern, year, month])

@@ -450,3 +450,8 @@ def show_flagged_transactions(conn):
                 print_dataframe(flagged_transactions)
         else:
             break
+
+def search_transactions_by_keyword(conn, year, month):
+    keyword = input("Enter a keyword to search for: ")
+    df = db_operations.search_transactions_by_keyword(conn, keyword, year, month)
+    print_dataframe(df)
