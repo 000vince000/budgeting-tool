@@ -114,7 +114,7 @@ def get_latest_month(conn):
 
 def fetch_transactions(conn, category, year, month):
     query = """
-    SELECT id, Card, "Transaction Date", Description, Amount, Category
+    SELECT id, Card, "Transaction Date", Description, Amount, Category, memo
     FROM consolidated_transactions
     WHERE Category = ?
       AND strftime('%Y', "Transaction Date") = ?
@@ -466,3 +466,11 @@ def unflag_transaction(conn, transaction_id):
     WHERE transaction_id = ?
     """
     execute_query(conn, query, [transaction_id])
+
+def add_memo_to_transaction(conn, transaction_id, new_memo):
+    query = """
+    UPDATE consolidated_transactions
+    SET Memo = Memo || ?
+    WHERE id = ?
+    """
+    execute_query(conn, query, (new_memo, transaction_id))  

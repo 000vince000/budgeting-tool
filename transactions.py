@@ -1,6 +1,6 @@
 from datetime import date, datetime
 import db_operations
-from helpers import print_divider, print_dataframe, get_user_input, get_user_choice
+from helpers import print_divider, print_dataframe, get_user_input, get_user_choice, print_numbered_list
 from collections import defaultdict
 from dateutil.relativedelta import relativedelta
 import ast
@@ -11,12 +11,11 @@ def dig_into_category(conn, year, month):
     
     while True:
         print("\nCategories:")
-        for i, category in enumerate(categories, 1):
-            print(f"{i}. {category}")
-        print(f"{len(categories) + 1}. Back to main menu")
+        print_numbered_list(categories)
+        print(f"x. Back to main menu")
 
-        choice = get_user_choice("\nChoose a category number to dig into: ", range(1, len(categories) + 2))
-        if choice == len(categories) + 1:
+        choice = get_user_choice("\nChoose a category number to dig into: ", list(range(1, len(categories) + 1)) + ['x'])
+        if choice == 'x':
             break
 
         selected_category = categories[choice - 1]
@@ -30,7 +29,12 @@ def dig_into_category(conn, year, month):
         print_dataframe(df)
         
         while True:
-            action = get_user_choice("\nDo you want to: \n1. Recategorize a transaction \n2. Flag a transaction \n3. Amortize a transaction \n4. Go back\nEnter your choice: ", range(1, 5))
+            print("\nDo you want to:")
+            options = ["Recategorize a transaction", "Flag a transaction", "Amortize a transaction", "Add a memo to a transaction"]
+            print_numbered_list(options)
+            print("x. Go back")
+            
+            action = get_user_choice("Enter your choice: ", list(range(1, len(options) + 1)) + ['x'])
             
             if action == 1:
                 recategorize_transaction(conn, df, categories, selected_category)
@@ -44,6 +48,11 @@ def dig_into_category(conn, year, month):
                 amortize_transaction(conn, df, year, month)
                 df = db_operations.fetch_transactions(conn, selected_category, year, month)
                 print("\nUpdated transactions:")
+                print_dataframe(df)
+            elif action == 4:
+                transaction_id = get_user_input("Enter the ID of the transaction to add a memo to: ", int, lambda x: x in df['id'].values)
+                new_memo = input("Enter the new memo: ")
+                db_operations.add_memo_to_transaction(conn, transaction_id, new_memo)
                 print_dataframe(df)
             else:
                 break

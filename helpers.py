@@ -8,13 +8,16 @@ def print_numbered_list(items, start=1):
 
 def get_user_choice(prompt, valid_range):
     while True:
+        user_input = input(prompt).strip().lower()
+        if user_input == 'x' and 'x' in valid_range:
+            return 'x'
         try:
-            choice = int(input(prompt))
+            choice = int(user_input)
             if choice in valid_range:
                 return choice
             print("Invalid choice. Please try again.")
         except ValueError:
-            print("Please enter a valid number.")
+            print("Please enter a valid number or 'x' to exit/go back.")
 
 def get_user_input(prompt, input_type=str, validation_func=None):
     while True:

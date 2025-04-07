@@ -32,10 +32,11 @@ def main_menu(conn, year, month):
     while True:
         print_divider("Main Menu")
         print(f"Current analysis period: {datetime(year, month, 1).strftime('%B %Y')}")
-        print_numbered_list(menu_options)
+        print_numbered_list(menu_options[:-1])  # Print all options except the last one with numbers
+        print(f"x. {menu_options[-1]}")  # Print the exit option with 'x'
         print("=" * 50)  # Add a bottom border
         
-        choice = get_user_choice("Enter your choice: ", range(1, len(menu_options) + 1))
+        choice = get_user_choice("Enter your choice: ", list(range(1, len(menu_options))) + ['x'])
         
         if choice == 1:
             run_visualize_script(year, month)
@@ -55,7 +56,7 @@ def main_menu(conn, year, month):
             set_goals(conn)
         elif choice == 9:
             return True  # Signal to change the analysis period
-        elif choice == 10:
+        elif choice == 'x':
             return False  # Signal to exit the program
 
 def main():
