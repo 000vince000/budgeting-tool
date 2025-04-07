@@ -43,6 +43,13 @@ def get_global_categories_from_db(conn):
     data = conn.execute(query).fetchall()
     return [item[0] for item in data]
 
+def get_categories_with_groups_from_db(conn):
+    query = """
+        select category, category_group from categories
+    """
+    # Just return the raw query results
+    return conn.execute(query).fetchall()
+
 # TODO: refactor this to be more specific rather than generic
 def persist_data_in_db(conn, df, quoted_table_name):
     cols = df.columns.to_list()
@@ -112,17 +119,32 @@ def get_latest_month(conn):
     """
     return execute_scalar_query(conn, query)
 
-def fetch_transactions(conn, category, year, month):
+def fetch_transactions_by_category(conn, category, year, month):
     query = """
     SELECT id, Card, "Transaction Date", Description, Amount, Category, memo
     FROM consolidated_transactions
     WHERE Category = ?
-      AND strftime('%Y', "Transaction Date") = ?
-      AND strftime('%m', "Transaction Date") = ?
+      AND EXTRACT(YEAR FROM "Transaction Date") = ?
+      AND EXTRACT(MONTH FROM "Transaction Date") = ?
     ORDER BY "Transaction Date" DESC
     """
-    return query_and_return_df(conn, query, [category, str(year), str(month).zfill(2)])
+    return query_and_return_df(conn, query, [category, year, month])
 
+def fetch_transactions_by_categories(conn, categories, year, month):
+    # Create a comma-separated string of quoted category names
+    # This is safer than dynamic placeholders for IN clauses in DuckDB
+    category_values = ", ".join(f"'{category}'" for category in categories)
+    
+    query = f"""
+    SELECT id, Card, "Transaction Date", Description, Amount, Category, memo
+    FROM consolidated_transactions
+    WHERE Category IN ({category_values})
+      AND EXTRACT(YEAR FROM "Transaction Date") = ?
+      AND EXTRACT(MONTH FROM "Transaction Date") = ?
+    ORDER BY category, amount asc
+    """
+    return query_and_return_df(conn, query, [year, month])
+    
 def show_p95_expensive_nonrecurring_for_latest_month(conn, year, month):
     query = """
     WITH specified_month AS (
@@ -315,34 +337,35 @@ def get_p85_for_category(conn, category, year, month):
     SELECT PERCENTILE_CONT(0.85) WITHIN GROUP (ORDER BY ABS(Amount))
     FROM consolidated_transactions
     WHERE Category = ?
-      AND strftime('%Y', "Transaction Date") = ?
-      AND strftime('%m', "Transaction Date") = ?
+      AND EXTRACT(YEAR FROM "Transaction Date") = ?
+      AND EXTRACT(MONTH FROM "Transaction Date") = ?
     """
-    return execute_scalar_query(conn, query, [category, str(year), str(month).zfill(2)])
+    return execute_scalar_query(conn, query, [category, year, month])
 
 def get_transactions_above_threshold(conn, category, year, month, threshold):
     query = """
     SELECT "Transaction Date", Description, Amount
     FROM consolidated_transactions
     WHERE Category = ?
-      AND strftime('%Y', "Transaction Date") = ?
-      AND strftime('%m', "Transaction Date") = ?
+      AND EXTRACT(YEAR FROM "Transaction Date") = ?
+      AND EXTRACT(MONTH FROM "Transaction Date") = ?
       AND ABS(Amount) > ?
     ORDER BY ABS(Amount) DESC
     """
-    return query_and_return_df(conn, query, [category, str(year), str(month).zfill(2), threshold])
+    return query_and_return_df(conn, query, [category, year, month, threshold])
 
 def get_p90_across_categories(conn, year, month, excluded_categories):
-    placeholders = ','.join(['?'] * len(excluded_categories))
+    # Create a comma-separated string of quoted category names
+    excluded_values = ", ".join(f"'{category}'" for category in excluded_categories)
+    
     query = f"""
     SELECT PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY ABS(Amount))
     FROM consolidated_transactions
-    WHERE strftime('%Y', "Transaction Date") = ?
-      AND strftime('%m', "Transaction Date") = ?
-      AND Category NOT IN ({placeholders})
+    WHERE EXTRACT(YEAR FROM "Transaction Date") = ?
+      AND EXTRACT(MONTH FROM "Transaction Date") = ?
+      AND Category NOT IN ({excluded_values})
     """
-    params = [str(year), str(month).zfill(2)] + excluded_categories
-    return execute_scalar_query(conn, query, params)
+    return execute_scalar_query(conn, query, [year, month])
 
 def check_recurring_transaction(conn, description, amount, transaction_date):
     query = """
@@ -402,11 +425,11 @@ def get_actual_spending(conn, year, month):
     query = """
     SELECT Category, SUM(Amount) as actual_amount
     FROM consolidated_transactions
-    WHERE strftime('%Y', "Transaction Date") = ?
-      AND strftime('%m', "Transaction Date") = ?
+    WHERE EXTRACT(YEAR FROM "Transaction Date") = ?
+      AND EXTRACT(MONTH FROM "Transaction Date") = ?
     GROUP BY Category
     """
-    return query_and_return_df(conn, query, [str(year), str(month).zfill(2)])
+    return query_and_return_df(conn, query, [year, month])
 
 def get_goals_and_breakdown_items(conn, year, month):
     query = """

@@ -19,7 +19,7 @@ def dig_into_category(conn, year, month):
             break
 
         selected_category = categories[choice - 1]
-        df = db_operations.fetch_transactions(conn, selected_category, year, month)
+        df = db_operations.fetch_transactions_by_category(conn, selected_category, year, month)
 
         if df.empty:
             print(f"No transactions found for {selected_category} in {year}-{month:02d}.")
@@ -38,7 +38,7 @@ def dig_into_category(conn, year, month):
             
             if action == 1:
                 recategorize_transaction(conn, df, categories, selected_category)
-                df = db_operations.fetch_transactions(conn, selected_category, year, month)
+                df = db_operations.fetch_transactions_by_category(conn, selected_category, year, month)
                 print("\nUpdated transactions:")
                 print_dataframe(df)
             elif action == 2:
@@ -46,7 +46,7 @@ def dig_into_category(conn, year, month):
                 print_dataframe(df)
             elif action == 3:
                 amortize_transaction(conn, df, year, month)
-                df = db_operations.fetch_transactions(conn, selected_category, year, month)
+                df = db_operations.fetch_transactions_by_category(conn, selected_category, year, month)
                 print("\nUpdated transactions:")
                 print_dataframe(df)
             elif action == 4:
@@ -56,6 +56,43 @@ def dig_into_category(conn, year, month):
                 print_dataframe(df)
             else:
                 break
+
+def dig_into_category_group(conn, year, month):
+    # Get raw categories data
+    raw_categories_data = db_operations.get_categories_with_groups_from_db(conn)
+    
+    # Organize categories by group
+    categories_by_group = {}
+    for row in raw_categories_data:
+        category, group = row
+        if group not in categories_by_group:
+            categories_by_group[group] = []
+        categories_by_group[group].append(category)
+    
+    while True:
+        print("\nCategory Groups:")
+        print_numbered_list(categories_by_group.keys())
+        print(f"x. Back to main menu")
+
+        choice = get_user_choice("\nChoose a category group number to dig into: ", list(range(1, len(categories_by_group.keys()) + 1)) + ['x'])
+        
+        if choice == 'x':
+            break
+            
+        # Get the key from the dictionary keys list
+        selected_group = list(categories_by_group.keys())[choice - 1]
+        # Get the categories for the selected group - now this is a list of categories
+        selected_categories = categories_by_group[selected_group]
+        
+        # Pass the list directly to fetch_transactions_by_categories
+        df = db_operations.fetch_transactions_by_categories(conn, selected_categories, year, month)
+        
+        if df.empty:
+            print(f"\nNo transactions found for {selected_group} in {year}-{month:02d}.")
+            continue
+            
+        print(f"\nTransactions for {selected_group} in {year}-{month:02d}:")
+        print_dataframe(df)
 
 def amortize_transaction(conn, df, year, month):
     transaction_id = get_user_input("Enter the ID of the transaction to amortize: ", int, lambda x: x in df['id'].values)
