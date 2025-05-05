@@ -111,9 +111,9 @@ category_map = {
     "Google One": "Vince spending",
     "Google Storage": "Vince spending",
     "Patreon": "Vince spending",
-    "APPLE.COM/BILL", "Kat spending",
-    "NYCDOT PARKING METERS", "Transportation",
-    "YMCA", "Health & Wellness"
+    "APPLE.COM/BILL": "Kat spending",
+    "NYCDOT PARKING METERS": "Transportation",
+    "YMCA": "Health & Wellness"
 }
 populate_table(db_name, table_name, category_map.items(), ['keyword VARCHAR PRIMARY KEY', 'category VARCHAR'])
 
