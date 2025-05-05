@@ -132,32 +132,57 @@ def create_table_flagged_transactions(conn):
     create_table(conn, table_name, columns)
     print(f"Table {table_name} created successfully")
 
+def create_table_category_matching_patterns(conn):
+    table_name = "category_matching_patterns"
+    columns = [
+        "keyword VARCHAR PRIMARY KEY",
+        "category VARCHAR",
+        f"FOREIGN KEY (category) REFERENCES categories(category)"
+    ]
+    create_table(conn, table_name, columns)
+    print(f"Table {table_name} created successfully")
+
+def create_table_categories(conn):
+    table_name = "categories"
+    columns = [
+        "category VARCHAR PRIMARY KEY",
+        "category_group VARCHAR"
+    ]
+    create_table(conn, table_name, columns)
+    print(f"Table {table_name} created successfully")
+
 def create_schema_menu(conn):
     while True:
         print("\nCreate Schema Menu:")
-        print("1. Create consolidated_transactions table")
-        print("2. Create category_budgets table")
-        print("3. Create current_budgets view")
-        print("4. Create vendor_category_mapping table")
-        print("5. Create surplus_and_deficit_breakdowns table")
-        print("6. Create flagged_transactions table")  # Add this line
-        print("7. Exit")  # Update this line
+        print("1. Create categories table")
+        print("2. Create category_matching_patterns table")
+        print("3. Create consolidated_transactions table")
+        print("4. Create category_budgets table")
+        print("5. Create current_budgets view")
+        print("6. Create vendor_category_mapping table")
+        print("7. Create surplus_and_deficit_breakdowns table")
+        print("8. Create flagged_transactions table")
+        print("9. Exit")
         
-        choice = input("Enter your choice (1-7): ")  # Update this line
+        choice = input("Enter your choice (1-9): ")
         
         if choice == '1':
-            create_table_consolidated_transactions(conn)
+            create_table_categories(conn)
         elif choice == '2':
-            create_table_category_budgets(conn)
+            create_table_category_matching_patterns(conn)
         elif choice == '3':
-            create_current_budgets_view(conn)
+            create_table_consolidated_transactions(conn)
         elif choice == '4':
-            create_table_vendor_category_mapping(conn)
+            create_table_category_budgets(conn)
         elif choice == '5':
+            create_current_budgets_view(conn)
+        elif choice == '6':
+            create_table_vendor_category_mapping(conn)
+        elif choice == '7':
             create_table_surplus_and_deficit_breakdowns_and_items(conn)
-        elif choice == '6':  # Add this block
+        elif choice == '8':
             create_table_flagged_transactions(conn)
-        elif choice == '7':  # Update this line
+        elif choice == '9':
             break
         else:
             print("Invalid choice. Please try again.")
