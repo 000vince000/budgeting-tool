@@ -146,4 +146,4 @@ global_category_list = {
 }
 
 table_name = 'categories'
-populate_table(db_name, table_name, global_category_list, ['category VARCHAR PRIMARY KEY','category_group VARCHAR'])
+populate_table(db_name, table_name, global_category_list.items(), ['category VARCHAR PRIMARY KEY','category_group VARCHAR'])
