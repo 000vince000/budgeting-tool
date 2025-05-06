@@ -175,7 +175,10 @@ def review_extraordinary_spendings(conn, year, month):
         transactions = db_operations.get_transactions_above_threshold(conn, category, year, month, p85)
         
         if not transactions.empty:
-            extraordinary_transactions[category] = transactions.to_dict('records')
+            # Only include negative amounts (expenses)
+            transactions = transactions[transactions['Amount'] < 0]
+            if not transactions.empty:
+                extraordinary_transactions[category] = transactions.to_dict('records')
     
     # Step 6: Calculate P90 across all categories and filter transactions
     p90_amount = db_operations.get_p90_across_categories(conn, year, month, excluded_categories)

@@ -151,11 +151,18 @@ def show_p95_expensive_nonrecurring_for_latest_month(conn, year, month):
         SELECT MAKE_DATE(?, ?, 1) AS month
     ),
     nonrecurring_expenses AS (
-        SELECT Description, Amount, "Transaction Date", Category
-        FROM consolidated_transactions, specified_month
-        WHERE Category NOT IN ('Monthly fixed cost', 'Monthly property expense', 'Monthly mortgage expense')
-          AND Amount < 0
-          AND DATE_TRUNC('month', "Transaction Date") = specified_month.month
+        SELECT t1.Description, t1.Amount, t1."Transaction Date", t1.Category
+        FROM consolidated_transactions t1, specified_month
+        WHERE t1.Category NOT IN ('Monthly fixed cost', 'Monthly property expense', 'Monthly mortgage expense')
+          AND t1.Amount < 0
+          AND DATE_TRUNC('month', t1."Transaction Date") = specified_month.month
+          AND NOT EXISTS (
+            SELECT 1 
+            FROM consolidated_transactions t2
+            WHERE t2.Description = t1.Description 
+              AND ABS(t2.Amount) BETWEEN ABS(t1.Amount) * 0.95 AND ABS(t1.Amount) * 1.05
+              AND t2."Transaction Date" != t1."Transaction Date"
+          )
     ),
     percentile_calc AS (
         SELECT *, 
