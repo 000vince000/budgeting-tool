@@ -41,20 +41,30 @@ def create_plot(df):
 # calculate net_income, per categories.category_group, as revenue - cost of revenue - discretionary_expenses - non_discretionary_expenses
 def calculate_net_income(conn, year, month):
     subtotal_by_category_group = get_subtotal_by_category_group_for_month(conn, year, month)
-    revenue = subtotal_by_category_group[subtotal_by_category_group['category_group'] == 'Revenue']['subtotal'].values[0]
-    cost_of_revenue = subtotal_by_category_group[subtotal_by_category_group['category_group'] == 'Cost of revenue']['subtotal'].values[0]
-    discretionary_expenses = subtotal_by_category_group[subtotal_by_category_group['category_group'] == 'Discretionary']['subtotal'].values[0]
-    non_discretionary_expenses = subtotal_by_category_group[subtotal_by_category_group['category_group'] == 'Non-discretionary']['subtotal'].values[0]
-    misc_expenses = subtotal_by_category_group[subtotal_by_category_group['category_group'] == 'Misc']['subtotal'].values[0]
-
-    net_income = revenue + cost_of_revenue + discretionary_expenses + non_discretionary_expenses + misc_expenses
+    
+    # Create a dictionary to store category group totals, defaulting to 0
+    category_totals = {
+        'Revenue': 0,
+        'Cost of revenue': 0,
+        'Discretionary': 0,
+        'Non-discretionary': 0,
+        'Misc': 0
+    }
+    
+    # Update values from DataFrame if they exist
+    if not subtotal_by_category_group.empty:
+        for _, row in subtotal_by_category_group.iterrows():
+            if row['category_group'] in category_totals:
+                category_totals[row['category_group']] = row['subtotal']
+    
+    net_income = sum(category_totals.values())
     
     print_divider("Income and Expense Summary")
-    print(f"Revenue:                     ${revenue:,.2f}")
-    print(f"- Cost of Revenue:            ${cost_of_revenue:,.2f}")
-    print(f"- Discretionary Expenses:     ${discretionary_expenses:,.2f}")
-    print(f"- Non-Discretionary Expenses: ${non_discretionary_expenses:,.2f}")
-    print(f"- Misc Expenses:              ${misc_expenses:,.2f}")
+    print(f"Revenue:                     ${category_totals['Revenue']:,.2f}")
+    print(f"- Cost of Revenue:            ${category_totals['Cost of revenue']:,.2f}")
+    print(f"- Discretionary Expenses:     ${category_totals['Discretionary']:,.2f}")
+    print(f"- Non-Discretionary Expenses: ${category_totals['Non-discretionary']:,.2f}")
+    print(f"- Misc Expenses:              ${category_totals['Misc']:,.2f}")
     print("----------------------------------------")
     print(f"Net Income:                   ${net_income:,.2f}")
 
