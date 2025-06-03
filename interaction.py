@@ -22,7 +22,7 @@ def main_menu(conn, year, month):
         "Search transactions by keyword",
         "Dig into a specific category",
         "Dig into a specific category group",
-        "See 95th percentile most expensive nonrecurring spendings",
+        "See 85th percentile most expensive nonrecurring spendings",
         "Review extraordinary spendings",
         "Set budget",
         "Add an adjustment transaction",

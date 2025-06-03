@@ -171,7 +171,7 @@ def show_p95_expensive_nonrecurring_for_latest_month(conn, year, month):
     )
     SELECT Description, Amount, "Transaction Date", Category
     FROM percentile_calc
-    WHERE percentile >= 0.95
+    WHERE percentile >= 0.85
     ORDER BY Amount ASC
     """
     df = query_and_return_df(conn, query, [year, month])
