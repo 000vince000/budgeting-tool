@@ -151,16 +151,20 @@ def create_table_categories(conn):
     create_table(conn, table_name, columns)
     print(f"Table {table_name} created successfully")
 
-def create_validation_view(conn):
+def create_category_validation_view(conn):
     create_view_query = """
-    CREATE OR REPLACE VIEW validation_view AS
+    CREATE OR REPLACE VIEW category_validation_view AS
     select distinct a.description, a.id, a."Transaction Date", a.category
     from consolidated_transactions a
     join consolidated_transactions b on a.description=b.Description and a.category<>b.category and a.id<>b.id
     where a.Description<> 'Deposit Mobile Banking' order by a.description
     """
     conn.execute(create_view_query)
-    print("View validation_view created successfully")
+    print("View category_validation_view created successfully")
+
+def create_views(conn):
+    create_category_validation_view(conn)
+    create_current_budgets_view(conn)
 
 def create_schema_menu(conn):
     while True:
@@ -169,14 +173,13 @@ def create_schema_menu(conn):
         print("2. Create category_matching_patterns table")
         print("3. Create consolidated_transactions table")
         print("4. Create category_budgets table")
-        print("5. Create current_budgets view")
+        print("5. Create views")
         print("6. Create vendor_category_mapping table")
         print("7. Create surplus_and_deficit_breakdowns table")
         print("8. Create flagged_transactions table")
-        print("9. Create validation view")
-        print("10. Exit")
+        print("9. Exit")
         
-        choice = input("Enter your choice (1-10): ")
+        choice = input("Enter your choice (1-9): ")
         
         if choice == '1':
             create_table_categories(conn)
@@ -187,7 +190,7 @@ def create_schema_menu(conn):
         elif choice == '4':
             create_table_category_budgets(conn)
         elif choice == '5':
-            create_current_budgets_view(conn)
+            create_views(conn)
         elif choice == '6':
             create_table_vendor_category_mapping(conn)
         elif choice == '7':
@@ -195,8 +198,6 @@ def create_schema_menu(conn):
         elif choice == '8':
             create_table_flagged_transactions(conn)
         elif choice == '9':
-            create_validation_view(conn)
-        elif choice == '10':
             break
         else:
             print("Invalid choice. Please try again.")
