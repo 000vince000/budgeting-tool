@@ -162,9 +162,22 @@ def create_category_validation_view(conn):
     conn.execute(create_view_query)
     print("View category_validation_view created successfully")
 
+def create_top_15_vendors_view(conn):
+    create_view_query = """
+    CREATE OR REPLACE VIEW top_15_vendors_view AS
+    select description, count(*) as frequency, sum(amount) as total
+    from consolidated_transactions
+    where description not in ('Deposit Mobile Banking') group by 1
+    having count(*) > 2
+    order by 2 desc
+    limit 15;"""
+    conn.execute(create_view_query)
+    print("View top_15_vendors_view created successfully")
+
 def create_views(conn):
     create_category_validation_view(conn)
     create_current_budgets_view(conn)
+    create_top_15_vendors_view(conn)
 
 def create_schema_menu(conn):
     while True:
