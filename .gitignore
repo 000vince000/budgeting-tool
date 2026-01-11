@@ -13,3 +13,4 @@ venv/
 000vince000.pub
 000vince000
 *.db.wal
+*.zip
