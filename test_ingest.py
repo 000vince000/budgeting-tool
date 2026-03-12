@@ -79,6 +79,42 @@ class TestProcessChaseCsv(unittest.TestCase):
 
         self.assertEqual(result.iloc[0]['Category'], 'Shopping')
 
+    @patch('ingest.pd.read_csv')
+    def test_mapping_memo_records_old_category(self, mock_read_csv):
+        mock_read_csv.return_value = self._make_df([
+            ['2023-01-01', 'Amazon Purchase', 'Personal', 'Sale', -50.0, ''],
+        ])
+
+        result = ingest.process_chase_csv('Chase_1234.csv', [], {}, {'amazon': 'Shopping'})
+
+        memo = result.iloc[0]['Memo']
+        self.assertIn('Personal', memo)
+        self.assertIn('Category updated via script from', memo)
+
+    @patch('ingest.get_category')
+    @patch('ingest.pd.read_csv')
+    def test_auto_assign_memo(self, mock_read_csv, mock_get_category):
+        mock_read_csv.return_value = self._make_df([
+            ['2023-01-01', 'Unknown Vendor', 'Personal', 'Sale', -10.0, ''],
+        ])
+        mock_get_category.return_value = ('Groceries', False)  # no user intervention
+
+        result = ingest.process_chase_csv('Chase_1234.csv', ['Groceries'], {}, {})
+
+        self.assertIn('Category assigned automatically via script', result.iloc[0]['Memo'])
+
+    @patch('ingest.get_category')
+    @patch('ingest.pd.read_csv')
+    def test_non_trigger_category_left_unchanged(self, mock_read_csv, mock_get_category):
+        mock_read_csv.return_value = self._make_df([
+            ['2023-01-01', 'Starbucks', 'Food & Drink', 'Sale', -5.0, ''],
+        ])
+
+        result = ingest.process_chase_csv('Chase_1234.csv', [], {}, {})
+
+        mock_get_category.assert_not_called()
+        self.assertEqual(result.iloc[0]['Category'], 'Food & Drink')
+
     @patch('ingest.get_category')
     @patch('ingest.pd.read_csv')
     def test_user_override_memo_interpolates_old_category(self, mock_read_csv, mock_get_category):
@@ -104,6 +140,24 @@ class TestProcessChaseCsv(unittest.TestCase):
         result = ingest.process_chase_csv('Chase_1234.csv', ['Food & Drink'], {}, {})
 
         self.assertTrue(pd.isna(result.iloc[0]['Category']))
+
+    @patch('ingest.pd.read_csv')
+    def test_card_name_extracted_from_filename(self, mock_read_csv):
+        mock_read_csv.return_value = self._make_df([
+            ['2023-01-01', 'Starbucks', 'Food & Drink', 'Sale', -5.0, ''],
+        ])
+
+        result = ingest.process_chase_csv('Chase_1234.csv', [], {}, {})
+
+        self.assertEqual(result.iloc[0]['Card'], 'Chase')
+
+    @patch('ingest.pd.read_csv')
+    def test_file_read_error_returns_none(self, mock_read_csv):
+        mock_read_csv.side_effect = Exception('file not found')
+
+        result = ingest.process_chase_csv('bad_path.csv', [], {}, {})
+
+        self.assertIsNone(result)
 
     @patch('ingest.pd.read_csv')
     def test_output_has_expected_columns(self, mock_read_csv):
