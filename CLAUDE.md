@@ -54,6 +54,15 @@ User actions via interaction.py → transactions.py → db_operations.py → Duc
 DuckDB → visualize-results.py → PNG charts
 ```
 
+## Working Style
+
+Before finalizing any suggestion — especially fixes, refactors, or design changes — internally critique it first:
+- Does this solution introduce a logical or semantic inconsistency?
+- Are there different cases being conflated that should be handled separately?
+- Would this break something that currently works correctly?
+
+If the answer to any of these is "maybe", flag it to the user before proposing the solution, not after.
+
 ## Category System
 
 Categories are grouped into: Revenue, Cost of revenue, Non-discretionary, Discretionary, Misc. The `category_matching_patterns` table stores keyword → category mappings used during ingestion. `vendor_category_mapping` stores vendor-level overrides that persist across imports.
