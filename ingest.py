@@ -7,6 +7,7 @@ import threading
 from datetime import datetime
 from db_operations import (
     get_category_mapping_from_db,
+    get_vendor_mapping_from_db,
     get_global_categories_from_db,
     persist_data_in_db,
     get_db_connection
@@ -85,13 +86,15 @@ def get_category(description, category_map, unique_categories, user_choices):
             except ValueError:
                 print("Invalid input. Please enter a number.")
 
-def apply_category_mapping(description, category_map):
-    for key, value in category_map.items():
+def apply_category_mapping(description, vendor_map, keyword_map):
+    if description in vendor_map:
+        return vendor_map[description]
+    for key, value in keyword_map.items():
         if key.lower() in description.lower():
             return value
     return None
 
-def process_chase_csv(input_file, global_categories, user_choices, category_map):
+def process_chase_csv(input_file, global_categories, user_choices, vendor_map, category_map):
     try:
         df = pd.read_csv(input_file)
     except Exception as e:
@@ -103,7 +106,7 @@ def process_chase_csv(input_file, global_categories, user_choices, category_map)
     df['Memo'] = df.get('Memo', '').fillna('')
 
     for index, row in df.iterrows():
-        mapped_category = apply_category_mapping(row['Description'], category_map)
+        mapped_category = apply_category_mapping(row['Description'], vendor_map, category_map)
 
         if mapped_category:
             old_category = df.at[index, 'Category']
@@ -123,7 +126,7 @@ def process_chase_csv(input_file, global_categories, user_choices, category_map)
 
     return df[['Card', 'Transaction Date', 'Description', 'Category', 'Type', 'Amount', 'Memo']]
 
-def process_schwab_csv(input_file, global_categories, user_choices, category_map):
+def process_schwab_csv(input_file, global_categories, user_choices, vendor_map, category_map):
     usecols = ['Date', 'Description', 'Type', 'Withdrawal', 'Deposit']
     df = pd.read_csv(input_file, usecols=usecols)
     # filtering out Chase Credit card payments
@@ -139,7 +142,7 @@ def process_schwab_csv(input_file, global_categories, user_choices, category_map
     df['Transaction Date'] = df['Date']
 
     for index, row in df.iterrows():
-        mapped_category = apply_category_mapping(row['Description'], category_map)
+        mapped_category = apply_category_mapping(row['Description'], vendor_map, category_map)
 
         if mapped_category:
             df.at[index, 'Category'] = mapped_category
@@ -159,9 +162,9 @@ def process_schwab_csv(input_file, global_categories, user_choices, category_map
 
     return df[['Card', 'Transaction Date', 'Description', 'Category', 'Type', 'Amount', 'Memo']]
 
-def process_files_parallel(input_files, process_func, global_categories, user_choices, category_map):
+def process_files_parallel(input_files, process_func, global_categories, user_choices, vendor_map, category_map):
     with concurrent.futures.ThreadPoolExecutor() as executor:
-        processed_dfs = list(executor.map(lambda f: process_func(f, global_categories, user_choices, category_map), input_files))
+        processed_dfs = list(executor.map(lambda f: process_func(f, global_categories, user_choices, vendor_map, category_map), input_files))
     
     processed_dfs = [df for df in processed_dfs if df is not None and not df.empty]
     return pd.concat(processed_dfs, ignore_index=True) if processed_dfs else None
@@ -170,6 +173,7 @@ def main():
     db_path = "budgeting-tool.db"
     conn = get_db_connection(db_path)
     category_map = get_category_mapping_from_db(conn)
+    vendor_map = get_vendor_mapping_from_db(conn)
     global_categories = get_global_categories_from_db(conn)
     table_name = 'consolidated_transactions'
 
@@ -189,12 +193,12 @@ def main():
     combined_df = pd.DataFrame()
 
     if chase_files:
-        chase_df = process_files_parallel(chase_files, process_chase_csv, global_categories, user_choices, category_map)
+        chase_df = process_files_parallel(chase_files, process_chase_csv, global_categories, user_choices, vendor_map, category_map)
         if chase_df is not None:
             combined_df = pd.concat([combined_df, chase_df], ignore_index=True)
 
     if schwab_files:
-        schwab_df = process_files_parallel(schwab_files, process_schwab_csv, global_categories, user_choices, category_map)
+        schwab_df = process_files_parallel(schwab_files, process_schwab_csv, global_categories, user_choices, vendor_map, category_map)
         if schwab_df is not None:
             combined_df = pd.concat([combined_df, schwab_df], ignore_index=True)
 

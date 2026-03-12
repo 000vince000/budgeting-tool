@@ -36,6 +36,13 @@ def get_category_mapping_from_db(conn):
     data = conn.execute(query).fetchall()
     return dict(data)
 
+def get_vendor_mapping_from_db(conn):
+    query = """
+        select vendor, category from vendor_category_mapping
+    """
+    data = conn.execute(query).fetchall()
+    return dict(data)
+
 def get_global_categories_from_db(conn):
     query = """
         select category from categories

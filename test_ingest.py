@@ -22,29 +22,59 @@ class TestCurrencyToFloat(unittest.TestCase):
 
 class TestApplyCategoryMapping(unittest.TestCase):
     def setUp(self):
-        self.category_map = {
+        self.vendor_map = {
+            "Ciao Gloria": "Drinks",
+            "Acme Corp Payroll": "Salary",
+        }
+        self.keyword_map = {
             "amazon": "Shopping",
             "netflix": "Entertainment",
             "whole foods": "Groceries",
         }
 
-    def test_substring_match(self):
-        result = ingest.apply_category_mapping("Amazon Purchase", self.category_map)
+    # --- keyword map (stage 2) ---
+
+    def test_keyword_substring_match(self):
+        result = ingest.apply_category_mapping("Amazon Purchase", {}, self.keyword_map)
+        self.assertEqual(result, "Shopping")
+
+    def test_keyword_case_insensitive(self):
+        result = ingest.apply_category_mapping("AMAZON PURCHASE", {}, self.keyword_map)
+        self.assertEqual(result, "Shopping")
+
+    def test_keyword_first_match_wins(self):
+        keyword_map = {"amazon": "Shopping", "amazon prime": "Subscriptions"}
+        result = ingest.apply_category_mapping("Amazon Prime Video", {}, keyword_map)
         self.assertEqual(result, "Shopping")
 
     def test_no_match_returns_none(self):
-        result = ingest.apply_category_mapping("Unknown Vendor XYZ", self.category_map)
+        result = ingest.apply_category_mapping("Unknown Vendor XYZ", {}, self.keyword_map)
         self.assertIsNone(result)
 
-    def test_case_insensitive(self):
-        result = ingest.apply_category_mapping("AMAZON PURCHASE", self.category_map)
-        self.assertEqual(result, "Shopping")
+    # --- vendor map (stage 1) ---
 
-    def test_first_match_wins(self):
-        # "amazon" appears before "amazon prime" in insertion order
-        category_map = {"amazon": "Shopping", "amazon prime": "Subscriptions"}
-        result = ingest.apply_category_mapping("Amazon Prime Video", category_map)
-        self.assertEqual(result, "Shopping")
+    def test_vendor_exact_match(self):
+        result = ingest.apply_category_mapping("Ciao Gloria", self.vendor_map, {})
+        self.assertEqual(result, "Drinks")
+
+    def test_vendor_exact_match_is_case_sensitive(self):
+        # vendor names come from the DB exactly as stored — case must match
+        result = ingest.apply_category_mapping("ciao gloria", self.vendor_map, {})
+        self.assertIsNone(result)
+
+    def test_vendor_match_does_not_use_substring(self):
+        # "Acme Corp" is NOT in vendor_map; only "Acme Corp Payroll" is
+        result = ingest.apply_category_mapping("Acme Corp Hardware", self.vendor_map, {})
+        self.assertIsNone(result)
+
+    # --- priority: vendor beats keyword ---
+
+    def test_vendor_takes_priority_over_keyword(self):
+        # "Ciao Gloria" is in vendor_map as "Drinks"
+        # "ciao" also appears as a keyword mapped to "Food"
+        keyword_map = {"ciao": "Food"}
+        result = ingest.apply_category_mapping("Ciao Gloria", self.vendor_map, keyword_map)
+        self.assertEqual(result, "Drinks")
 
 
 class TestProcessChaseCsv(unittest.TestCase):
@@ -61,23 +91,34 @@ class TestProcessChaseCsv(unittest.TestCase):
             ['2023-01-02', 'Starbucks', 'Food & Drink', 'Sale', -5.0, ''],
         ])
 
-        result = ingest.process_chase_csv('Chase_1234.csv', [], {}, {})
+        result = ingest.process_chase_csv('Chase_1234.csv', [], {}, {}, {})
 
         self.assertNotIn('AUTOMATIC PAYMENT - THANK', result['Description'].tolist())
         self.assertIn('Starbucks', result['Description'].tolist())
 
     @patch('ingest.pd.read_csv')
-    def test_mapped_category_applied_without_user_input(self, mock_read_csv):
+    def test_keyword_mapped_category_applied_without_user_input(self, mock_read_csv):
         mock_read_csv.return_value = self._make_df([
             ['2023-01-01', 'Amazon Purchase', 'Personal', 'Sale', -50.0, ''],
         ])
-        category_map = {'amazon': 'Shopping'}
 
         with patch('ingest.get_category') as mock_get_category:
-            result = ingest.process_chase_csv('Chase_1234.csv', ['Shopping'], {}, category_map)
+            result = ingest.process_chase_csv('Chase_1234.csv', ['Shopping'], {}, {}, {'amazon': 'Shopping'})
             mock_get_category.assert_not_called()
 
         self.assertEqual(result.iloc[0]['Category'], 'Shopping')
+
+    @patch('ingest.pd.read_csv')
+    def test_vendor_mapped_category_applied_without_user_input(self, mock_read_csv):
+        mock_read_csv.return_value = self._make_df([
+            ['2023-01-01', 'Ciao Gloria', 'Personal', 'Sale', -30.0, ''],
+        ])
+
+        with patch('ingest.get_category') as mock_get_category:
+            result = ingest.process_chase_csv('Chase_1234.csv', ['Drinks'], {}, {'Ciao Gloria': 'Drinks'}, {})
+            mock_get_category.assert_not_called()
+
+        self.assertEqual(result.iloc[0]['Category'], 'Drinks')
 
     @patch('ingest.pd.read_csv')
     def test_mapping_memo_records_old_category(self, mock_read_csv):
@@ -85,7 +126,7 @@ class TestProcessChaseCsv(unittest.TestCase):
             ['2023-01-01', 'Amazon Purchase', 'Personal', 'Sale', -50.0, ''],
         ])
 
-        result = ingest.process_chase_csv('Chase_1234.csv', [], {}, {'amazon': 'Shopping'})
+        result = ingest.process_chase_csv('Chase_1234.csv', [], {}, {}, {'amazon': 'Shopping'})
 
         memo = result.iloc[0]['Memo']
         self.assertIn('Personal', memo)
@@ -99,7 +140,7 @@ class TestProcessChaseCsv(unittest.TestCase):
         ])
         mock_get_category.return_value = ('Groceries', False)  # no user intervention
 
-        result = ingest.process_chase_csv('Chase_1234.csv', ['Groceries'], {}, {})
+        result = ingest.process_chase_csv('Chase_1234.csv', ['Groceries'], {}, {}, {})
 
         self.assertIn('Category assigned automatically via script', result.iloc[0]['Memo'])
 
@@ -110,7 +151,7 @@ class TestProcessChaseCsv(unittest.TestCase):
             ['2023-01-01', 'Starbucks', 'Food & Drink', 'Sale', -5.0, ''],
         ])
 
-        result = ingest.process_chase_csv('Chase_1234.csv', [], {}, {})
+        result = ingest.process_chase_csv('Chase_1234.csv', [], {}, {}, {})
 
         mock_get_category.assert_not_called()
         self.assertEqual(result.iloc[0]['Category'], 'Food & Drink')
@@ -123,7 +164,7 @@ class TestProcessChaseCsv(unittest.TestCase):
         ])
         mock_get_category.return_value = ('Groceries', True)  # user intervened
 
-        result = ingest.process_chase_csv('Chase_1234.csv', ['Groceries'], {}, {})
+        result = ingest.process_chase_csv('Chase_1234.csv', ['Groceries'], {}, {}, {})
 
         memo = result.iloc[0]['Memo']
         self.assertIn('Personal', memo)
@@ -137,7 +178,7 @@ class TestProcessChaseCsv(unittest.TestCase):
         ])
         mock_get_category.return_value = ('EXCLUDE', True)
 
-        result = ingest.process_chase_csv('Chase_1234.csv', ['Food & Drink'], {}, {})
+        result = ingest.process_chase_csv('Chase_1234.csv', ['Food & Drink'], {}, {}, {})
 
         self.assertTrue(pd.isna(result.iloc[0]['Category']))
 
@@ -147,7 +188,7 @@ class TestProcessChaseCsv(unittest.TestCase):
             ['2023-01-01', 'Starbucks', 'Food & Drink', 'Sale', -5.0, ''],
         ])
 
-        result = ingest.process_chase_csv('Chase_1234.csv', [], {}, {})
+        result = ingest.process_chase_csv('Chase_1234.csv', [], {}, {}, {})
 
         self.assertEqual(result.iloc[0]['Card'], 'Chase')
 
@@ -155,7 +196,7 @@ class TestProcessChaseCsv(unittest.TestCase):
     def test_file_read_error_returns_none(self, mock_read_csv):
         mock_read_csv.side_effect = Exception('file not found')
 
-        result = ingest.process_chase_csv('bad_path.csv', [], {}, {})
+        result = ingest.process_chase_csv('bad_path.csv', [], {}, {}, {})
 
         self.assertIsNone(result)
 
@@ -165,7 +206,7 @@ class TestProcessChaseCsv(unittest.TestCase):
             ['2023-01-01', 'Starbucks', 'Food & Drink', 'Sale', -5.0, ''],
         ])
 
-        result = ingest.process_chase_csv('Chase_1234.csv', [], {}, {})
+        result = ingest.process_chase_csv('Chase_1234.csv', [], {}, {}, {})
 
         self.assertEqual(
             set(result.columns),
@@ -187,7 +228,7 @@ class TestProcessSchwabCsv(unittest.TestCase):
         ])
 
         result = ingest.process_schwab_csv(
-            'schwab.csv', [], {}, {'some expense': 'Bills'}
+            'schwab.csv', [], {}, {}, {'some expense': 'Bills'}
         )
 
         self.assertAlmostEqual(result.iloc[0]['Amount'], -100.0)
@@ -199,7 +240,7 @@ class TestProcessSchwabCsv(unittest.TestCase):
         ])
 
         result = ingest.process_schwab_csv(
-            'schwab.csv', [], {}, {'paycheck': 'Income'}
+            'schwab.csv', [], {}, {}, {'paycheck': 'Income'}
         )
 
         self.assertAlmostEqual(result.iloc[0]['Amount'], 2000.0)
@@ -212,7 +253,7 @@ class TestProcessSchwabCsv(unittest.TestCase):
         ])
 
         result = ingest.process_schwab_csv(
-            'schwab.csv', [], {}, {'grocery': 'Groceries'}
+            'schwab.csv', [], {}, {}, {'grocery': 'Groceries'}
         )
 
         self.assertNotIn('CHASE CREDIT CARD PAYMENT', result['Description'].tolist())
@@ -225,7 +266,7 @@ class TestProcessSchwabCsv(unittest.TestCase):
         ])
 
         result = ingest.process_schwab_csv(
-            'schwab.csv', [], {}, {'grocery': 'Groceries'}
+            'schwab.csv', [], {}, {}, {'grocery': 'Groceries'}
         )
 
         self.assertNotIn('Transfer to Savings', result['Description'].tolist())
@@ -237,7 +278,7 @@ class TestProcessSchwabCsv(unittest.TestCase):
         ])
 
         result = ingest.process_schwab_csv(
-            'schwab.csv', [], {}, {'netflix': 'Entertainment'}
+            'schwab.csv', [], {}, {}, {'netflix': 'Entertainment'}
         )
 
         self.assertEqual(result.iloc[0]['Category'], 'Entertainment')
