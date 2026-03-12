@@ -102,11 +102,9 @@ def process_chase_csv(input_file, global_categories, user_choices, category_map)
     df['Card'] = os.path.basename(input_file).split('_')[0]
     df['Memo'] = df.get('Memo', '').fillna('')
 
-    rows_to_drop = []
-
     for index, row in df.iterrows():
         mapped_category = apply_category_mapping(row['Description'], category_map)
-        
+
         if mapped_category:
             old_category = df.at[index, 'Category']
             df.at[index, 'Category'] = mapped_category
@@ -114,8 +112,6 @@ def process_chase_csv(input_file, global_categories, user_choices, category_map)
         elif pd.isna(row['Category']) or row['Category'] in ["Bills & Utilities", "Professional Services", "Personal", ""]:
             category, user_intervened = get_category(row['Description'], category_map, global_categories, user_choices)
             if category == "EXCLUDE":
-                #rows_to_drop.append(index)
-                #instead of dropping the row, we'll just set the category to None
                 df.at[index, 'Category'] = None
             else:
                 old_category = df.at[index, 'Category']
@@ -125,7 +121,6 @@ def process_chase_csv(input_file, global_categories, user_choices, category_map)
                 else:
                     df.at[index, 'Memo'] += ' Category assigned automatically via script'
 
-    df = df.drop(rows_to_drop)
     return df[['Card', 'Transaction Date', 'Description', 'Category', 'Type', 'Amount', 'Memo']]
 
 def process_schwab_csv(input_file, global_categories, user_choices, category_map):
@@ -143,19 +138,15 @@ def process_schwab_csv(input_file, global_categories, user_choices, category_map
     df['Memo'] = ''
     df['Transaction Date'] = df['Date']
 
-    rows_to_drop = []
-
     for index, row in df.iterrows():
         mapped_category = apply_category_mapping(row['Description'], category_map)
-        
+
         if mapped_category:
             df.at[index, 'Category'] = mapped_category
             df.at[index, 'Memo'] += ' Category assigned automatically via script'
         else:
             category, user_intervened = get_category(row['Description'], category_map, global_categories, user_choices)
             if category == "EXCLUDE":
-                #rows_to_drop.append(index)
-                #instead of dropping the row, we'll just set the category to None
                 df.at[index, 'Category'] = None
             else:
                 df.at[index, 'Category'] = category
@@ -164,7 +155,6 @@ def process_schwab_csv(input_file, global_categories, user_choices, category_map
                 else:
                     df.at[index, 'Memo'] += ' Category assigned automatically via script'
 
-    df = df.drop(rows_to_drop)
     df['Card'] = 'Schwab'
 
     return df[['Card', 'Transaction Date', 'Description', 'Category', 'Type', 'Amount', 'Memo']]
