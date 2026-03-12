@@ -111,18 +111,15 @@ def process_chase_csv(input_file, global_categories, user_choices, vendor_map, c
         if mapped_category:
             old_category = df.at[index, 'Category']
             df.at[index, 'Category'] = mapped_category
-            df.at[index, 'Memo'] += f' Category updated via script from {old_category}'
+            df.at[index, 'Memo'] += f' auto; was: {old_category}'
         elif pd.isna(row['Category']) or row['Category'] in ["Bills & Utilities", "Professional Services", "Personal", ""]:
             category, user_intervened = get_category(row['Description'], category_map, global_categories, user_choices)
             if category == "EXCLUDE":
                 df.at[index, 'Category'] = None
             else:
-                old_category = df.at[index, 'Category']
                 df.at[index, 'Category'] = category
                 if user_intervened:
-                    df.at[index, 'Memo'] += f' Category replaced by user via script from {old_category}'
-                else:
-                    df.at[index, 'Memo'] += ' Category assigned automatically via script'
+                    df.at[index, 'Memo'] += ' manual'
 
     return df[['Card', 'Transaction Date', 'Description', 'Category', 'Type', 'Amount', 'Memo']]
 
@@ -150,17 +147,13 @@ def process_schwab_csv(input_file, global_categories, user_choices, vendor_map, 
 
         if mapped_category:
             df.at[index, 'Category'] = mapped_category
-            df.at[index, 'Memo'] += ' Category assigned automatically via script'
+            df.at[index, 'Memo'] += ' auto'
         else:
             category, user_intervened = get_category(row['Description'], category_map, global_categories, user_choices)
             if category == "EXCLUDE":
                 df.at[index, 'Category'] = None
             else:
                 df.at[index, 'Category'] = category
-                if user_intervened:
-                    df.at[index, 'Memo'] += ' Category assigned by user via script'
-                else:
-                    df.at[index, 'Memo'] += ' Category assigned automatically via script'
 
     df['Card'] = 'Schwab'
 

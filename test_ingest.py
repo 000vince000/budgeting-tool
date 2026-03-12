@@ -129,20 +129,19 @@ class TestProcessChaseCsv(unittest.TestCase):
         result = ingest.process_chase_csv('Chase_1234.csv', [], {}, {}, {'amazon': 'Shopping'})
 
         memo = result.iloc[0]['Memo']
-        self.assertIn('Personal', memo)
-        self.assertIn('Category updated via script from', memo)
+        self.assertIn('auto; was: Personal', memo)
 
     @patch('ingest.get_category')
     @patch('ingest.pd.read_csv')
-    def test_auto_assign_memo(self, mock_read_csv, mock_get_category):
+    def test_cache_hit_writes_no_memo(self, mock_read_csv, mock_get_category):
         mock_read_csv.return_value = self._make_df([
             ['2023-01-01', 'Unknown Vendor', 'Personal', 'Sale', -10.0, ''],
         ])
-        mock_get_category.return_value = ('Groceries', False)  # no user intervention
+        mock_get_category.return_value = ('Groceries', False)  # cache hit, no user intervention
 
         result = ingest.process_chase_csv('Chase_1234.csv', ['Groceries'], {}, {}, {})
 
-        self.assertIn('Category assigned automatically via script', result.iloc[0]['Memo'])
+        self.assertEqual(result.iloc[0]['Memo'], '')
 
     @patch('ingest.get_category')
     @patch('ingest.pd.read_csv')
@@ -158,7 +157,7 @@ class TestProcessChaseCsv(unittest.TestCase):
 
     @patch('ingest.get_category')
     @patch('ingest.pd.read_csv')
-    def test_user_override_memo_interpolates_old_category(self, mock_read_csv, mock_get_category):
+    def test_user_pick_writes_manual_memo(self, mock_read_csv, mock_get_category):
         mock_read_csv.return_value = self._make_df([
             ['2023-01-01', 'Some Vendor', 'Personal', 'Sale', -10.0, ''],
         ])
@@ -166,9 +165,7 @@ class TestProcessChaseCsv(unittest.TestCase):
 
         result = ingest.process_chase_csv('Chase_1234.csv', ['Groceries'], {}, {}, {})
 
-        memo = result.iloc[0]['Memo']
-        self.assertIn('Personal', memo)
-        self.assertNotIn('{old_category}', memo)
+        self.assertIn('manual', result.iloc[0]['Memo'])
 
     @patch('ingest.get_category')
     @patch('ingest.pd.read_csv')
@@ -290,6 +287,7 @@ class TestProcessSchwabCsv(unittest.TestCase):
         )
 
         self.assertEqual(result.iloc[0]['Category'], 'Entertainment')
+        self.assertIn('auto', result.iloc[0]['Memo'])
 
     @patch('ingest.pd.read_csv')
     def test_vendor_mapping_applied(self, mock_read_csv):
@@ -319,7 +317,7 @@ class TestProcessSchwabCsv(unittest.TestCase):
 
     @patch('ingest.get_category')
     @patch('ingest.pd.read_csv')
-    def test_user_intervened_memo(self, mock_read_csv, mock_get_category):
+    def test_user_pick_writes_no_memo(self, mock_read_csv, mock_get_category):
         mock_read_csv.return_value = self._make_df([
             ['2023-01-01', 'Some Vendor', 'ACH', '$10.00', '$0.00'],
         ])
@@ -327,11 +325,11 @@ class TestProcessSchwabCsv(unittest.TestCase):
 
         result = ingest.process_schwab_csv('schwab.csv', ['Groceries'], {}, {}, {})
 
-        self.assertIn('Category assigned by user via script', result.iloc[0]['Memo'])
+        self.assertEqual(result.iloc[0]['Memo'], '')
 
     @patch('ingest.get_category')
     @patch('ingest.pd.read_csv')
-    def test_auto_assign_memo(self, mock_read_csv, mock_get_category):
+    def test_cache_hit_writes_no_memo(self, mock_read_csv, mock_get_category):
         mock_read_csv.return_value = self._make_df([
             ['2023-01-01', 'Some Vendor', 'ACH', '$10.00', '$0.00'],
         ])
@@ -339,7 +337,7 @@ class TestProcessSchwabCsv(unittest.TestCase):
 
         result = ingest.process_schwab_csv('schwab.csv', ['Groceries'], {}, {}, {})
 
-        self.assertIn('Category assigned automatically via script', result.iloc[0]['Memo'])
+        self.assertEqual(result.iloc[0]['Memo'], '')
 
     @patch('ingest.pd.read_csv')
     def test_card_is_always_schwab(self, mock_read_csv):
