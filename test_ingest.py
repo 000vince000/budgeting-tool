@@ -81,6 +81,20 @@ class TestProcessChaseCsv(unittest.TestCase):
 
     @patch('ingest.get_category')
     @patch('ingest.pd.read_csv')
+    def test_user_override_memo_interpolates_old_category(self, mock_read_csv, mock_get_category):
+        mock_read_csv.return_value = self._make_df([
+            ['2023-01-01', 'Some Vendor', 'Personal', 'Sale', -10.0, ''],
+        ])
+        mock_get_category.return_value = ('Groceries', True)  # user intervened
+
+        result = ingest.process_chase_csv('Chase_1234.csv', ['Groceries'], {}, {})
+
+        memo = result.iloc[0]['Memo']
+        self.assertIn('Personal', memo)
+        self.assertNotIn('{old_category}', memo)
+
+    @patch('ingest.get_category')
+    @patch('ingest.pd.read_csv')
     def test_exclude_sets_category_to_none(self, mock_read_csv, mock_get_category):
         mock_read_csv.return_value = self._make_df([
             ['2023-01-01', 'Some Weird Vendor', float('nan'), 'Sale', -10.0, ''],

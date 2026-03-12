@@ -121,7 +121,7 @@ def process_chase_csv(input_file, global_categories, user_choices, category_map)
                 old_category = df.at[index, 'Category']
                 df.at[index, 'Category'] = category
                 if user_intervened:
-                    df.at[index, 'Memo'] += ' Category replaced by user via script from {old_category}'
+                    df.at[index, 'Memo'] += f' Category replaced by user via script from {old_category}'
                 else:
                     df.at[index, 'Memo'] += ' Category assigned automatically via script'
 
