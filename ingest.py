@@ -128,7 +128,11 @@ def process_chase_csv(input_file, global_categories, user_choices, vendor_map, c
 
 def process_schwab_csv(input_file, global_categories, user_choices, vendor_map, category_map):
     usecols = ['Date', 'Description', 'Type', 'Withdrawal', 'Deposit']
-    df = pd.read_csv(input_file, usecols=usecols)
+    try:
+        df = pd.read_csv(input_file, usecols=usecols)
+    except Exception as e:
+        print(f"Error reading file '{input_file}': {e}")
+        return None
     # filtering out Chase Credit card payments
     df = df[~df['Description'].str.contains('CHASE CREDIT', case=False, na=False)]
     df = df[df['Type'] != 'TRANSFER']

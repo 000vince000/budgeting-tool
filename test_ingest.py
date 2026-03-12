@@ -272,6 +272,14 @@ class TestProcessSchwabCsv(unittest.TestCase):
         self.assertNotIn('Transfer to Savings', result['Description'].tolist())
 
     @patch('ingest.pd.read_csv')
+    def test_file_read_error_returns_none(self, mock_read_csv):
+        mock_read_csv.side_effect = Exception('file not found')
+
+        result = ingest.process_schwab_csv('bad_path.csv', [], {}, {}, {})
+
+        self.assertIsNone(result)
+
+    @patch('ingest.pd.read_csv')
     def test_category_mapping_applied(self, mock_read_csv):
         mock_read_csv.return_value = self._make_df([
             ['2023-01-01', 'Netflix Monthly', 'ACH', '$15.99', '$0.00'],
