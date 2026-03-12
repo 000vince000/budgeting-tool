@@ -280,7 +280,7 @@ class TestProcessSchwabCsv(unittest.TestCase):
         self.assertIsNone(result)
 
     @patch('ingest.pd.read_csv')
-    def test_category_mapping_applied(self, mock_read_csv):
+    def test_keyword_mapping_applied(self, mock_read_csv):
         mock_read_csv.return_value = self._make_df([
             ['2023-01-01', 'Netflix Monthly', 'ACH', '$15.99', '$0.00'],
         ])
@@ -290,6 +290,138 @@ class TestProcessSchwabCsv(unittest.TestCase):
         )
 
         self.assertEqual(result.iloc[0]['Category'], 'Entertainment')
+
+    @patch('ingest.pd.read_csv')
+    def test_vendor_mapping_applied(self, mock_read_csv):
+        mock_read_csv.return_value = self._make_df([
+            ['2023-01-01', 'Ciao Gloria', 'ACH', '$12.00', '$0.00'],
+        ])
+
+        with patch('ingest.get_category') as mock_get_category:
+            result = ingest.process_schwab_csv(
+                'schwab.csv', [], {}, {'Ciao Gloria': 'Drink'}, {}
+            )
+            mock_get_category.assert_not_called()
+
+        self.assertEqual(result.iloc[0]['Category'], 'Drink')
+
+    @patch('ingest.get_category')
+    @patch('ingest.pd.read_csv')
+    def test_exclude_sets_category_to_none(self, mock_read_csv, mock_get_category):
+        mock_read_csv.return_value = self._make_df([
+            ['2023-01-01', 'Some Vendor', 'ACH', '$10.00', '$0.00'],
+        ])
+        mock_get_category.return_value = ('EXCLUDE', True)
+
+        result = ingest.process_schwab_csv('schwab.csv', [], {}, {}, {})
+
+        self.assertTrue(pd.isna(result.iloc[0]['Category']))
+
+    @patch('ingest.get_category')
+    @patch('ingest.pd.read_csv')
+    def test_user_intervened_memo(self, mock_read_csv, mock_get_category):
+        mock_read_csv.return_value = self._make_df([
+            ['2023-01-01', 'Some Vendor', 'ACH', '$10.00', '$0.00'],
+        ])
+        mock_get_category.return_value = ('Groceries', True)
+
+        result = ingest.process_schwab_csv('schwab.csv', ['Groceries'], {}, {}, {})
+
+        self.assertIn('Category assigned by user via script', result.iloc[0]['Memo'])
+
+    @patch('ingest.get_category')
+    @patch('ingest.pd.read_csv')
+    def test_auto_assign_memo(self, mock_read_csv, mock_get_category):
+        mock_read_csv.return_value = self._make_df([
+            ['2023-01-01', 'Some Vendor', 'ACH', '$10.00', '$0.00'],
+        ])
+        mock_get_category.return_value = ('Groceries', False)
+
+        result = ingest.process_schwab_csv('schwab.csv', ['Groceries'], {}, {}, {})
+
+        self.assertIn('Category assigned automatically via script', result.iloc[0]['Memo'])
+
+    @patch('ingest.pd.read_csv')
+    def test_card_is_always_schwab(self, mock_read_csv):
+        mock_read_csv.return_value = self._make_df([
+            ['2023-01-01', 'Netflix Monthly', 'ACH', '$15.99', '$0.00'],
+        ])
+
+        result = ingest.process_schwab_csv(
+            'some_other_filename.csv', [], {}, {}, {'netflix': 'Entertainment'}
+        )
+
+        self.assertEqual(result.iloc[0]['Card'], 'Schwab')
+
+    @patch('ingest.pd.read_csv')
+    def test_output_has_expected_columns(self, mock_read_csv):
+        mock_read_csv.return_value = self._make_df([
+            ['2023-01-01', 'Netflix Monthly', 'ACH', '$15.99', '$0.00'],
+        ])
+
+        result = ingest.process_schwab_csv(
+            'schwab.csv', [], {}, {}, {'netflix': 'Entertainment'}
+        )
+
+        self.assertEqual(
+            set(result.columns),
+            {'Card', 'Transaction Date', 'Description', 'Category', 'Type', 'Amount', 'Memo'}
+        )
+
+
+class TestProcessFilesParallel(unittest.TestCase):
+    def _make_result_df(self, description):
+        return pd.DataFrame(
+            [['2023-01-01', description, 'Food & Drink', 'Sale', -5.0, '']],
+            columns=['Transaction Date', 'Description', 'Category', 'Type', 'Amount', 'Memo']
+        )
+
+    def test_none_results_filtered_out(self):
+        process_func = lambda f, *args: None
+
+        result = ingest.process_files_parallel(
+            ['bad.csv'], process_func, [], {}, {}, {}
+        )
+
+        self.assertIsNone(result)
+
+    def test_empty_dataframe_filtered_out(self):
+        process_func = lambda f, *args: pd.DataFrame()
+
+        result = ingest.process_files_parallel(
+            ['empty.csv'], process_func, [], {}, {}, {}
+        )
+
+        self.assertIsNone(result)
+
+    def test_multiple_files_concatenated(self):
+        dfs = {
+            'file1.csv': self._make_result_df('Starbucks'),
+            'file2.csv': self._make_result_df('Amazon'),
+        }
+        process_func = lambda f, *args: dfs[f]
+
+        result = ingest.process_files_parallel(
+            ['file1.csv', 'file2.csv'], process_func, [], {}, {}, {}
+        )
+
+        self.assertEqual(len(result), 2)
+        self.assertIn('Starbucks', result['Description'].tolist())
+        self.assertIn('Amazon', result['Description'].tolist())
+
+    def test_mixed_valid_and_none_results(self):
+        dfs = {
+            'good.csv': self._make_result_df('Starbucks'),
+            'bad.csv': None,
+        }
+        process_func = lambda f, *args: dfs[f]
+
+        result = ingest.process_files_parallel(
+            ['good.csv', 'bad.csv'], process_func, [], {}, {}, {}
+        )
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result.iloc[0]['Description'], 'Starbucks')
 
 
 if __name__ == '__main__':
