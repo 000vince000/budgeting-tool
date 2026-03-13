@@ -33,21 +33,21 @@ def get_category_mapping_from_db(conn):
     query = """
         select keyword, category from category_matching_patterns
     """
-    data = conn.execute(query).fetchall()
+    data = execute_query(conn, query).fetchall()
     return dict(data)
 
 def get_vendor_mapping_from_db(conn):
     query = """
         select vendor, category from vendor_category_mapping
     """
-    data = conn.execute(query).fetchall()
+    data = execute_query(conn, query).fetchall()
     return dict(data)
 
 def get_global_categories_from_db(conn):
     query = """
         select category from categories
     """
-    data = conn.execute(query).fetchall()
+    data = execute_query(conn, query).fetchall()
     return [item[0] for item in data]
 
 def get_categories_with_groups_from_db(conn):
@@ -55,7 +55,7 @@ def get_categories_with_groups_from_db(conn):
         select category, category_group from categories
     """
     # Just return the raw query results
-    return conn.execute(query).fetchall()
+    return execute_query(conn, query).fetchall()
 
 # TODO: refactor this to be more specific rather than generic
 def persist_data_in_db(conn, df, quoted_table_name):
@@ -95,7 +95,7 @@ def insert_category_budget(conn, category, budget):
         INSERT INTO category_budgets (category, budget)
         VALUES (?, ?)
         """
-        conn.execute(insert_query, (category, budget))
+        execute_query(conn, insert_query, [category, budget])
         conn.commit()
         print(f"Budget of {budget} for category '{category}' inserted successfully")
     except Exception as e:
@@ -116,7 +116,7 @@ def recategorize_transaction(conn, transaction_id, new_category, old_category):
     memo_addition = f". Recategorized by user from {old_category}"
     if new_category is None:
         memo_addition += ". Set to NULL by user from {old_category}"
-    conn.execute(query, (new_category, memo_addition, memo_addition, transaction_id))
+    execute_query(conn, query, [new_category, memo_addition, memo_addition, transaction_id])
     conn.commit()
 
 def get_latest_month(conn):
@@ -334,7 +334,7 @@ def insert_surplus_deficit_breakdown_item(conn, breakdown_id, category, descript
         (surplus_and_deficit_breakdown_id, category, description, amount, date)
         VALUES (?, ?, ?, ?, ?)
         """
-        conn.execute(query, [breakdown_id, category, description, amount, date])
+        execute_query(conn, query, [breakdown_id, category, description, amount, date])
         conn.commit()
     except Exception as e:
         conn.rollback()
@@ -412,7 +412,7 @@ def get_breakdown_items_by_date(conn, year, month):
     FROM surplus_and_deficit_breakdown_items
     WHERE EXTRACT(YEAR FROM date) = ? AND EXTRACT(MONTH FROM date) = ?
     """
-    return pd.read_sql_query(query, conn, params=[year, month])
+    return query_and_return_df(conn, query, [year, month])
 
 def get_breakdown_items(conn, year, month):
     query = """
@@ -516,7 +516,7 @@ def add_memo_to_transaction(conn, transaction_id, new_memo):
     SET Memo = Memo || ?
     WHERE id = ?
     """
-    execute_query(conn, query, (new_memo, transaction_id))  
+    execute_query(conn, query, (new_memo, transaction_id))
 
 def search_transactions_by_keyword(conn, keyword, year, month):
     # Add wildcards to the keyword parameter value rather than embedding ? in quotes
