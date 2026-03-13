@@ -101,7 +101,7 @@ def process_chase_csv(input_file, global_categories, user_choices, vendor_map, c
         print(f"Error reading file '{input_file}': {e}")
         return None
 
-    df = df[df['Description'] != "AUTOMATIC PAYMENT - THANK"]
+    df = df[df['Description'] != "AUTOMATIC PAYMENT - THANK"].copy()
     df['Card'] = os.path.basename(input_file).split('_')[0]
     df['Memo'] = df.get('Memo', '').fillna('')
 
