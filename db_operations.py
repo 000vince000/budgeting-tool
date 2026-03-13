@@ -1,5 +1,5 @@
 import duckdb
-from datetime import datetime
+from datetime import datetime, date
 import pandas as pd
 import warnings
 
