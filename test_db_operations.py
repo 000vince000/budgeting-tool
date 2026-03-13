@@ -6,6 +6,7 @@ import pandas as pd
 
 from db_operations import (
     add_memo_to_transaction,
+    delete_vendor_category_mapping,
     check_recurring_transaction,
     fetch_transactions_by_category,
     fetch_transactions_by_categories,
@@ -416,6 +417,21 @@ class TestMappingAndBudgetWrites(unittest.TestCase):
     def test_insert_vendor_category_mapping_invalid_category_raises(self):
         with self.assertRaises(ValueError):
             insert_vendor_category_mapping(self.conn, 'SomeVendor', 'NonexistentCategory')
+
+    def test_insert_vendor_category_mapping_upserts_existing(self):
+        # First insert
+        insert_vendor_category_mapping(self.conn, 'UpsertVendor', 'Groceries')
+        # Re-insert with same vendor — should update, not raise
+        self.conn.execute("INSERT INTO categories VALUES ('Dining', 'Discretionary')")
+        insert_vendor_category_mapping(self.conn, 'UpsertVendor', 'Dining')
+        result = get_vendor_category_mapping(self.conn, 'UpsertVendor')
+        self.assertEqual(result, 'Dining')
+
+    def test_delete_vendor_category_mapping(self):
+        insert_vendor_category_mapping(self.conn, 'DeleteVendor', 'Groceries')
+        delete_vendor_category_mapping(self.conn, 'DeleteVendor')
+        result = get_vendor_category_mapping(self.conn, 'DeleteVendor')
+        self.assertIsNone(result)
 
     def test_insert_category_budget_valid(self):
         insert_category_budget(self.conn, 'Groceries', 500)

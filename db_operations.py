@@ -205,19 +205,25 @@ def get_month_summary(conn, year, month):
     return query_and_return_df(conn, query, [year, month])
 
 def insert_vendor_category_mapping(conn, vendor, category):
-    # Remove the transaction handling from this function
     category_check_query = "SELECT COUNT(*) FROM categories WHERE category = ?"
     result = execute_query(conn, category_check_query, [category]).fetchone()
     if result[0] == 0:
         raise ValueError(f"Category '{category}' does not exist in the categories table.")
 
-    print(f"DEBUG: Inserting vendor-category mapping: '{vendor}' -> '{category}'")
     insert_query = """
     INSERT INTO vendor_category_mapping (vendor, category)
     VALUES (?, ?)
+    ON CONFLICT (vendor) DO UPDATE SET category = EXCLUDED.category
     """
     execute_query(conn, insert_query, [vendor, category])
     print(f"Vendor '{vendor}' successfully mapped to category '{category}'")
+
+def delete_vendor_category_mapping(conn, vendor):
+    query = """
+    DELETE FROM vendor_category_mapping
+    WHERE vendor = ?
+    """
+    execute_query(conn, query, [vendor])
 
 def get_transactions_by_vendor(conn, vendor):
     query = """
