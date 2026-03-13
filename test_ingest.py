@@ -422,5 +422,128 @@ class TestProcessFilesParallel(unittest.TestCase):
         self.assertEqual(result.iloc[0]['Description'], 'Starbucks')
 
 
+class TestGetUserChoiceIngest(unittest.TestCase):
+    """Tests for ingest.get_user_choice (returns option string, not int)."""
+
+    def test_valid_choice_returns_option_string(self):
+        with patch('builtins.input', side_effect=['2']):
+            result = ingest.get_user_choice("Pick:", ["Chase", "Schwab", "Done"])
+        self.assertEqual(result, "Schwab")
+
+    def test_out_of_range_then_valid(self):
+        with patch('builtins.input', side_effect=['9', '1']):
+            result = ingest.get_user_choice("Pick:", ["Chase", "Done"])
+        self.assertEqual(result, "Chase")
+
+    def test_non_numeric_then_valid(self):
+        with patch('builtins.input', side_effect=['abc', '2']):
+            result = ingest.get_user_choice("Pick:", ["Chase", "Done"])
+        self.assertEqual(result, "Done")
+
+
+class TestGetInputFiles(unittest.TestCase):
+    def test_immediate_empty_returns_empty_list(self):
+        with patch('builtins.input', side_effect=['']):
+            result = ingest.get_input_files("Chase")
+        self.assertEqual(result, [])
+
+    def test_existing_file_added(self):
+        with patch('builtins.input', side_effect=['/some/file.csv', '']):
+            with patch('ingest.os.path.exists', return_value=True):
+                result = ingest.get_input_files("Chase")
+        self.assertEqual(result, ['/some/file.csv'])
+
+    def test_nonexistent_file_skipped_then_valid(self):
+        with patch('builtins.input', side_effect=['/bad/file.csv', '/good/file.csv', '']):
+            with patch('ingest.os.path.exists', side_effect=[False, True]):
+                result = ingest.get_input_files("Chase")
+        self.assertEqual(result, ['/good/file.csv'])
+
+    def test_multiple_files_all_returned(self):
+        with patch('builtins.input', side_effect=['/a.csv', '/b.csv', '']):
+            with patch('ingest.os.path.exists', return_value=True):
+                result = ingest.get_input_files("Chase")
+        self.assertEqual(result, ['/a.csv', '/b.csv'])
+
+
+class TestGetCategory(unittest.TestCase):
+    def setUp(self):
+        self.category_map = {'amazon': 'Shopping', 'netflix': 'Entertainment'}
+        self.unique_categories = ['Groceries', 'Shopping', 'Entertainment']
+
+    def test_keyword_match_returns_without_user_input(self):
+        result, user_intervened = ingest.get_category(
+            'Amazon Purchase', self.category_map, self.unique_categories, {}
+        )
+        self.assertEqual(result, 'Shopping')
+        self.assertFalse(user_intervened)
+
+    def test_keyword_match_is_case_insensitive(self):
+        result, user_intervened = ingest.get_category(
+            'NETFLIX MONTHLY', self.category_map, self.unique_categories, {}
+        )
+        self.assertEqual(result, 'Entertainment')
+        self.assertFalse(user_intervened)
+
+    def test_user_choices_cache_hit_no_intervention(self):
+        user_choices = {'Some Vendor': 'Groceries'}
+        result, user_intervened = ingest.get_category(
+            'Some Vendor', {}, self.unique_categories, user_choices
+        )
+        self.assertEqual(result, 'Groceries')
+        self.assertFalse(user_intervened)
+
+    def test_user_selects_existing_category(self):
+        # sorted categories (excl. EXCLUDE) are: Entertainment, Groceries, Shopping
+        # EXCLUDE is appended last, then "Enter a new category" after that
+        # pick index 2 → "Groceries"
+        with patch('builtins.input', side_effect=['2']):
+            result, user_intervened = ingest.get_category(
+                'Unknown Vendor', {}, self.unique_categories, {}
+            )
+        self.assertEqual(result, 'Groceries')
+        self.assertTrue(user_intervened)
+
+    def test_user_selects_exclude(self):
+        # sorted non-EXCLUDE: Entertainment(1), Groceries(2), Shopping(3)
+        # EXCLUDE is appended at index 4
+        categories_with_exclude = ['Groceries', 'Shopping', 'Entertainment', 'EXCLUDE']
+        with patch('builtins.input', side_effect=['4']):
+            result, user_intervened = ingest.get_category(
+                'Unknown Vendor', {}, categories_with_exclude, {}
+            )
+        self.assertEqual(result, 'EXCLUDE')
+        self.assertTrue(user_intervened)
+
+    def test_user_enters_new_category(self):
+        # sorted: Entertainment(1), Groceries(2), Shopping(3), EXCLUDE(4), new category(5)
+        with patch('builtins.input', side_effect=['5', 'MyNewCategory']):
+            result, user_intervened = ingest.get_category(
+                'Unknown Vendor', {}, self.unique_categories, {}
+            )
+        self.assertEqual(result, 'MyNewCategory')
+        self.assertTrue(user_intervened)
+
+    def test_user_choice_stored_in_user_choices(self):
+        user_choices = {}
+        with patch('builtins.input', side_effect=['1']):
+            ingest.get_category('Unknown Vendor', {}, self.unique_categories, user_choices)
+        self.assertIn('Unknown Vendor', user_choices)
+
+    def test_invalid_input_then_valid(self):
+        with patch('builtins.input', side_effect=['abc', '1']):
+            result, user_intervened = ingest.get_category(
+                'Unknown Vendor', {}, self.unique_categories, {}
+            )
+        self.assertTrue(user_intervened)
+
+    def test_out_of_range_then_valid(self):
+        with patch('builtins.input', side_effect=['99', '1']):
+            result, user_intervened = ingest.get_category(
+                'Unknown Vendor', {}, self.unique_categories, {}
+            )
+        self.assertTrue(user_intervened)
+
+
 if __name__ == '__main__':
     unittest.main()
