@@ -332,7 +332,7 @@ def get_goal_breakdown_from_user(conn):
 
     return breakdown
 
-def calculate_and_conditionally_insert_monthly_breakdowns(conn, breakdown_id, effective_date):
+def calculate_and_conditionally_insert_monthly_breakdowns(conn, breakdown_id, breakdown, effective_date):
     valid_categories = set(db_operations.get_global_categories_from_db(conn))
     latest_transaction_date = db_operations.get_latest_transaction_date(conn)
     effective_date_year = int(effective_date.split('-')[0])

@@ -115,7 +115,7 @@ def recategorize_transaction(conn, transaction_id, new_category, old_category):
     """
     memo_addition = f". Recategorized by user from {old_category}"
     if new_category is None:
-        memo_addition += ". Set to NULL by user from {old_category}"
+        memo_addition += f". Set to NULL by user from {old_category}"
     execute_query(conn, query, [new_category, memo_addition, memo_addition, transaction_id])
     conn.commit()
 
