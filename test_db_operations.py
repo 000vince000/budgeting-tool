@@ -12,6 +12,7 @@ from db_operations import (
     fetch_transactions_by_categories,
     flag_transaction,
     get_actual_spending,
+    get_biggest_oneoff_expenses,
     get_categories_with_groups_from_db,
     get_category_mapping_from_db,
     get_flagged_transactions,
@@ -241,11 +242,16 @@ class TestTransactionReads(unittest.TestCase):
         result = search_transactions_by_keyword(self.conn, 'XYZNonexistent', 2024, 1)
         self.assertTrue(result.empty)
 
-    def test_get_p85_for_category(self):
+    def test_get_p85_for_category_excludes_current_month(self):
+        # Jan 2024 has Groceries: -50, -30. Feb 2024 has: -60.
+        # Asking for Jan's P85 should use only Feb data (all-time excl. current month) → P85 of [60] = 60.
         result = get_p85_for_category(self.conn, 'Groceries', 2024, 1)
-        # p85 of [50, 30] is between 30 and 50
-        self.assertIsNotNone(result)
-        self.assertGreaterEqual(float(result), 30.0)
+        self.assertAlmostEqual(float(result), 60.0)
+
+    def test_get_p85_for_category_uses_other_months(self):
+        # Asking for Feb's P85 uses only Jan data: [-50, -30] → P85 = 47.0
+        result = get_p85_for_category(self.conn, 'Groceries', 2024, 2)
+        self.assertAlmostEqual(float(result), 47.0)
 
     def test_get_subtotal_by_category_group(self):
         result = get_subtotal_by_category_group_for_month(self.conn, 2024, 1)
@@ -297,6 +303,49 @@ class TestCheckRecurringTransaction(unittest.TestCase):
         count = check_recurring_transaction(self.conn, 'Netflix', -15.99, date(2024, 1, 10))
         # Only Feb (id=2) and Mar (id=3) are in different months → count = 2
         self.assertEqual(count, 2)
+
+
+# ---------------------------------------------------------------------------
+# get_biggest_oneoff_expenses
+# ---------------------------------------------------------------------------
+
+class TestGetBiggestOneoffExpenses(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.conn = duckdb.connect(':memory:')
+        _create_schema(cls.conn)
+        cls.conn.execute("INSERT INTO categories VALUES ('Dining', 'Discretionary')")
+
+        # 20 cheap background transactions — anchors the percentile distribution so
+        # the target transactions (at -90 and -100) clear PERCENT_RANK >= 0.85
+        for i in range(20):
+            _insert_tx(cls.conn, i + 1, 'Chase', f'2024-01-{i + 1:02d}', f'BkgVendor{i}', 'Dining', amount=-5.0)
+
+        # Two charges: same vendor, same amount, same month but different days (date-fix scenario)
+        _insert_tx(cls.conn, 21, 'Chase', '2024-01-21', 'DoubleCharge', 'Dining', amount=-100.0)
+        _insert_tx(cls.conn, 22, 'Chase', '2024-01-22', 'DoubleCharge', 'Dining', amount=-100.0)
+
+        # Recurring service — same vendor/amount in Jan and Feb
+        _insert_tx(cls.conn, 23, 'Chase', '2024-01-23', 'RecurringService', 'Dining', amount=-80.0)
+        _insert_tx(cls.conn, 24, 'Chase', '2024-02-23', 'RecurringService', 'Dining', amount=-80.0)
+
+        # True one-off — appears only in Jan
+        _insert_tx(cls.conn, 25, 'Chase', '2024-01-24', 'OneOffExpense', 'Dining', amount=-90.0)
+
+    def _descriptions(self):
+        df = get_biggest_oneoff_expenses(self.conn, 2024, 1)
+        return set() if (df is None or df.empty) else set(df['Description'].tolist())
+
+    def test_genuine_oneoff_appears(self):
+        self.assertIn('OneOffExpense', self._descriptions())
+
+    def test_recurring_charge_excluded(self):
+        self.assertNotIn('RecurringService', self._descriptions())
+
+    def test_same_month_different_day_not_treated_as_recurring(self):
+        # Under the fixed logic (DATE_TRUNC != month), same-month charges don't
+        # count as recurring even if they share the same vendor and amount
+        self.assertIn('DoubleCharge', self._descriptions())
 
 
 # ---------------------------------------------------------------------------
