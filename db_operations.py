@@ -521,6 +521,26 @@ def add_memo_to_transaction(conn, transaction_id, new_memo):
     """
     execute_query(conn, query, (new_memo, transaction_id))
 
+def update_transaction_date(conn, transaction_id, old_date, new_date):
+    memo_addition = f". Date moved by user from {old_date}"
+    query = """
+    UPDATE consolidated_transactions
+    SET "Transaction Date" = ?,
+        Memo = CASE
+            WHEN Memo IS NULL OR Memo = '' THEN ?
+            ELSE Memo || ?
+        END
+    WHERE id = ?
+    """
+    try:
+        execute_query(conn, query, (new_date, memo_addition, memo_addition, transaction_id))
+        conn.commit()
+        return True
+    except Exception as e:
+        if "ConstraintException" in type(e).__name__ or "constraint" in str(e).lower():
+            return False
+        raise
+
 def search_transactions_by_keyword(conn, keyword, year, month):
     # Add wildcards to the keyword parameter value rather than embedding ? in quotes
     search_pattern = f"%{keyword}%"

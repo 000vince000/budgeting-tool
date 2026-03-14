@@ -29,12 +29,12 @@ def dig_into_category(conn, year, month):
         
         while True:
             print("\nDo you want to:")
-            options = ["Recategorize a transaction", "Flag a transaction", "Amortize a transaction", "Add a memo to a transaction"]
+            options = ["Recategorize a transaction", "Flag a transaction", "Amortize a transaction", "Add a memo to a transaction", "Move transaction date"]
             print_numbered_list(options)
             print("x. Go back")
-            
+
             action = get_user_choice("Enter your choice: ", list(range(1, len(options) + 1)) + ['x'])
-            
+
             if action == 1:
                 recategorize_transaction(conn, df, categories, selected_category)
                 df = db_operations.fetch_transactions_by_category(conn, selected_category, year, month)
@@ -52,6 +52,11 @@ def dig_into_category(conn, year, month):
                 transaction_id = get_user_input("Enter the ID of the transaction to add a memo to: ", int, lambda x: x in df['id'].values)
                 new_memo = input("Enter the new memo: ")
                 db_operations.add_memo_to_transaction(conn, transaction_id, new_memo)
+                print_dataframe(df)
+            elif action == 5:
+                move_transaction_date(conn, df)
+                df = db_operations.fetch_transactions_by_category(conn, selected_category, year, month)
+                print("\nUpdated transactions:")
                 print_dataframe(df)
             else:
                 break
@@ -397,6 +402,16 @@ def recategorize_all_vendor_transactions(conn, vendor, new_category):
     except Exception as e:
         conn.rollback()
         print(f"An error occurred. All operations have been rolled back. Error: {str(e)}")
+
+def move_transaction_date(conn, df):
+    transaction_id = get_user_input("Enter the ID of the transaction to move: ", int, lambda x: x in df['id'].values)
+    old_date = df.loc[df['id'] == transaction_id, 'Transaction Date'].iloc[0].date()
+    new_date = get_user_input("Enter the new date (YYYY-MM-DD): ", str, validate_date)
+    success = db_operations.update_transaction_date(conn, transaction_id, old_date, new_date)
+    if success:
+        print(f"Transaction date updated to {new_date}.")
+    else:
+        print("Date conflict: a transaction already exists with those fields on that date.")
 
 def validate_date(date_string):
     try:
