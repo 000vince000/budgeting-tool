@@ -19,9 +19,12 @@ from db_operations import (
     get_global_categories_from_db,
     get_latest_month,
     get_latest_transaction_date,
+    get_month_summary,
     get_net_income_for_month,
     get_p85_for_category,
+    get_p90_across_categories,
     get_subtotal_by_category_group_for_month,
+    get_transactions_above_threshold,
     get_transactions_by_vendor,
     get_vendor_category_mapping,
     get_vendor_mapping_from_db,
@@ -346,6 +349,127 @@ class TestGetBiggestOneoffExpenses(unittest.TestCase):
         # Under the fixed logic (DATE_TRUNC != month), same-month charges don't
         # count as recurring even if they share the same vendor and amount
         self.assertIn('DoubleCharge', self._descriptions())
+
+
+# ---------------------------------------------------------------------------
+# get_month_summary
+# ---------------------------------------------------------------------------
+
+class TestGetMonthSummary(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.conn = duckdb.connect(':memory:')
+        _create_schema(cls.conn)
+        # get_month_summary joins against current_budgets view
+        cls.conn.execute("""
+            CREATE OR REPLACE VIEW current_budgets AS
+            SELECT c.category, cb.budget, cb.timestamp
+            FROM categories c
+            LEFT JOIN (
+                SELECT category, budget, timestamp,
+                       ROW_NUMBER() OVER (PARTITION BY category ORDER BY timestamp DESC) AS rn
+                FROM category_budgets
+            ) cb ON c.category = cb.category AND cb.rn = 1
+        """)
+        cls.conn.execute("INSERT INTO categories VALUES ('Groceries', 'Discretionary')")
+        cls.conn.execute("INSERT INTO categories VALUES ('Dining', 'Discretionary')")
+        # Groceries: Jan total=-80, Feb total=-60  →  p50 of [80, 60] = 70
+        _insert_tx(cls.conn, 1, 'Chase', '2024-01-05', 'Whole Foods', 'Groceries', amount=-50.0)
+        _insert_tx(cls.conn, 2, 'Chase', '2024-01-10', 'Trader Joes', 'Groceries', amount=-30.0)
+        _insert_tx(cls.conn, 3, 'Chase', '2024-02-05', 'Whole Foods', 'Groceries', amount=-60.0)
+        # Dining: Jan only (no Feb transactions)
+        _insert_tx(cls.conn, 4, 'Chase', '2024-01-15', 'Shake Shack', 'Dining', amount=-20.0)
+
+    def _row(self, df, category):
+        return df[df['category'] == category].iloc[0]
+
+    def test_specified_month_sum_correct(self):
+        df = get_month_summary(self.conn, 2024, 2)
+        self.assertAlmostEqual(float(self._row(df, 'Groceries')['specified_month_sum']), 60.0)
+
+    def test_category_with_no_spending_shows_zero(self):
+        df = get_month_summary(self.conn, 2024, 2)
+        self.assertAlmostEqual(float(self._row(df, 'Dining')['specified_month_sum']), 0.0)
+
+    def test_p50_reflects_all_months(self):
+        # Groceries has Jan (80) and Feb (60) → p50 of [60, 80] = 70
+        df = get_month_summary(self.conn, 2024, 2)
+        self.assertAlmostEqual(float(self._row(df, 'Groceries')['p50_monthly_sum']), 70.0)
+
+    def test_all_categories_present(self):
+        df = get_month_summary(self.conn, 2024, 2)
+        self.assertIn('Groceries', df['category'].values)
+        self.assertIn('Dining', df['category'].values)
+
+
+# ---------------------------------------------------------------------------
+# get_transactions_above_threshold
+# ---------------------------------------------------------------------------
+
+class TestGetTransactionsAboveThreshold(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.conn = duckdb.connect(':memory:')
+        _create_schema(cls.conn)
+        cls.conn.execute("INSERT INTO categories VALUES ('Groceries', 'Discretionary')")
+        _insert_tx(cls.conn, 1, 'Chase', '2024-01-05', 'Small',      'Groceries', amount=-10.0)
+        _insert_tx(cls.conn, 2, 'Chase', '2024-01-10', 'Medium',     'Groceries', amount=-50.0)
+        _insert_tx(cls.conn, 3, 'Chase', '2024-01-15', 'Large',      'Groceries', amount=-100.0)
+        _insert_tx(cls.conn, 4, 'Chase', '2024-02-01', 'OtherMonth', 'Groceries', amount=-200.0)
+
+    def test_returns_only_above_threshold(self):
+        result = get_transactions_above_threshold(self.conn, 'Groceries', 2024, 1, 40.0)
+        descriptions = result['Description'].tolist()
+        self.assertIn('Large', descriptions)
+        self.assertIn('Medium', descriptions)
+        self.assertNotIn('Small', descriptions)
+
+    def test_excludes_other_months(self):
+        result = get_transactions_above_threshold(self.conn, 'Groceries', 2024, 1, 0.0)
+        self.assertNotIn('OtherMonth', result['Description'].tolist())
+
+    def test_empty_when_threshold_above_all(self):
+        result = get_transactions_above_threshold(self.conn, 'Groceries', 2024, 1, 500.0)
+        self.assertTrue(result.empty)
+
+    def test_ordered_by_amount_descending(self):
+        result = get_transactions_above_threshold(self.conn, 'Groceries', 2024, 1, 0.0)
+        amounts = [abs(float(a)) for a in result['Amount'].tolist()]
+        self.assertEqual(amounts, sorted(amounts, reverse=True))
+
+
+# ---------------------------------------------------------------------------
+# get_p90_across_categories
+# ---------------------------------------------------------------------------
+
+class TestGetP90AcrossCategories(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.conn = duckdb.connect(':memory:')
+        _create_schema(cls.conn)
+        cls.conn.execute("INSERT INTO categories VALUES ('Dining', 'Discretionary')")
+        cls.conn.execute("INSERT INTO categories VALUES ('Salary', 'Revenue')")
+        # Five Dining transactions: [10, 20, 30, 40, 50]
+        for i, amount in enumerate([-10.0, -20.0, -30.0, -40.0, -50.0], start=1):
+            _insert_tx(cls.conn, i, 'Chase', '2024-01-10', f'Vendor{i}', 'Dining', amount=amount)
+        # Large Salary transaction — excluded in most tests
+        _insert_tx(cls.conn, 6, 'Chase', '2024-01-15', 'Employer', 'Salary', amount=5000.0)
+
+    def test_p90_value(self):
+        # PERCENTILE_CONT(0.90) on [10,20,30,40,50]: 0.9*(5-1)=3.6 → 40 + 0.6*10 = 46
+        result = get_p90_across_categories(self.conn, 2024, 1, ['Salary'])
+        self.assertAlmostEqual(float(result), 46.0)
+
+    def test_excluded_categories_not_counted(self):
+        # Salary (5000) would dominate if included; excluding it gives a much lower P90
+        excl = get_p90_across_categories(self.conn, 2024, 1, ['Salary'])
+        incl = get_p90_across_categories(self.conn, 2024, 1, [])
+        self.assertLess(float(excl), float(incl))
+
+    def test_empty_exclusion_list_includes_all(self):
+        result = get_p90_across_categories(self.conn, 2024, 1, [])
+        # With Salary (5000) included, P90 should be well above 50
+        self.assertGreater(float(result), 50.0)
 
 
 # ---------------------------------------------------------------------------

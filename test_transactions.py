@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pandas as pd
 from dateutil.relativedelta import relativedelta
 
-from transactions import amortize_transaction, recategorize_all_vendor_transactions, recategorize_transaction
+from transactions import amortize_transaction, recategorize_all_vendor_transactions, recategorize_transaction, validate_date
 from test_db_operations import _create_schema, _insert_tx
 
 
@@ -238,6 +238,30 @@ class TestRecategorizeTransaction(unittest.TestCase):
             with patch('transactions.get_user_choice', return_value=excluded_index):
                 recategorize_transaction(self.conn, self.df, self.categories, 'Dining')
         self.assertIsNone(self._get_category())
+
+
+# ---------------------------------------------------------------------------
+# validate_date
+# ---------------------------------------------------------------------------
+
+class TestValidateDate(unittest.TestCase):
+    def test_valid_date(self):
+        self.assertTrue(validate_date('2024-01-15'))
+
+    def test_invalid_separator(self):
+        self.assertFalse(validate_date('2024/01/15'))
+
+    def test_invalid_month(self):
+        self.assertFalse(validate_date('2024-13-01'))
+
+    def test_invalid_day(self):
+        self.assertFalse(validate_date('2024-01-32'))
+
+    def test_garbage_input(self):
+        self.assertFalse(validate_date('notadate'))
+
+    def test_wrong_order(self):
+        self.assertFalse(validate_date('15-01-2024'))
 
 
 if __name__ == '__main__':

@@ -374,15 +374,17 @@ def get_transactions_above_threshold(conn, category, year, month, threshold):
     return query_and_return_df(conn, query, [category, year, month, threshold])
 
 def get_p90_across_categories(conn, year, month, excluded_categories):
-    # Create a comma-separated string of quoted category names
-    excluded_values = ", ".join(f"'{category}'" for category in excluded_categories)
-    
+    exclusion_clause = ""
+    if excluded_categories:
+        excluded_values = ", ".join(f"'{category}'" for category in excluded_categories)
+        exclusion_clause = f"AND Category NOT IN ({excluded_values})"
+
     query = f"""
     SELECT PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY ABS(Amount))
     FROM consolidated_transactions
     WHERE EXTRACT(YEAR FROM "Transaction Date") = ?
       AND EXTRACT(MONTH FROM "Transaction Date") = ?
-      AND Category NOT IN ({excluded_values})
+      {exclusion_clause}
     """
     return execute_scalar_query(conn, query, [year, month])
 
