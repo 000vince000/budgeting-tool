@@ -1,3 +1,4 @@
+import os
 import duckdb
 from datetime import datetime, date
 import pandas as pd
@@ -199,7 +200,8 @@ def insert_adjustment_transaction(conn, transaction_date, description, amount, c
     conn.commit()
 
 def get_month_summary(conn, year, month):
-    with open('specific-month-summary.sql', 'r') as file:
+    sql_path = os.path.join(os.path.dirname(__file__), 'specific-month-summary.sql')
+    with open(sql_path, 'r') as file:
         query = file.read()
     
     return query_and_return_df(conn, query, [year, month])

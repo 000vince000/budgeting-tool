@@ -3,7 +3,6 @@ import db_operations
 from helpers import print_divider, print_dataframe, get_user_input, get_user_choice, print_numbered_list
 from collections import defaultdict
 from dateutil.relativedelta import relativedelta
-import ast
 from decimal import Decimal
 
 def dig_into_category(conn, year, month):
@@ -143,7 +142,7 @@ def show_biggest_oneoff_expenses(conn, year, month):
             amount = abs(row['Amount'])
             print(f"[{row['Category']:<20}] {date}\t{row['Description']:<40}\t${amount:>10.2f}")
             total += amount
-        print(f"\nTotal 95th percentile non-recurring spending: ${total:>10.2f}")
+        print(f"\nTotal biggest one-off spending: ${total:>10.2f}")
 
 def review_extraordinary_spendings(conn, year, month):
     print_divider("Reviewing Extraordinary Spendings")
@@ -337,7 +336,6 @@ def calculate_and_conditionally_insert_monthly_breakdowns(conn, breakdown_id, br
     latest_transaction_date = db_operations.get_latest_transaction_date(conn)
     effective_date_year = int(effective_date.split('-')[0])
     effective_date_month = int(effective_date.split('-')[1])
-    active_breakdown = db_operations.get_active_breakdowns(conn, effective_date_year, effective_date_month).iloc[0]
     current_date = datetime.strptime(effective_date, '%Y-%m-%d').date()
     end_date = latest_transaction_date.replace(day=1) + relativedelta(months=1) - relativedelta(days=1)
     today = date.today()
@@ -346,7 +344,6 @@ def calculate_and_conditionally_insert_monthly_breakdowns(conn, breakdown_id, br
         # Only process months that have ended
         if current_date.replace(day=1) + relativedelta(months=1) <= today:
             net_income = db_operations.get_net_income_for_month(conn, current_date.year, current_date.month)
-            breakdown = ast.literal_eval(active_breakdown['breakdown'])
             for category_or_description, pct_breakdown in breakdown.items():
                 amount = net_income * Decimal(pct_breakdown)
                 if category_or_description in valid_categories:
@@ -364,7 +361,7 @@ def calculate_and_conditionally_insert_monthly_breakdowns(conn, breakdown_id, br
 
 def recategorize_transaction(conn, df, categories, selected_category):
     transaction_id = get_user_input("Enter the ID of the transaction to recategorize: ", int, lambda x: x in df['id'].values)
-    new_category_index = get_user_choice("\nEnter the number of the new category or 27 as the Exclude option: ", range(1, len(categories) + 3))
+    new_category_index = get_user_choice(f"\nEnter the number of the new category or {len(categories) + 1} to exclude: ", range(1, len(categories) + 3))
     
     new_category = categories[new_category_index - 1] if new_category_index <= len(categories) else None
     transaction = df[df['id'] == transaction_id].iloc[0]
@@ -434,9 +431,10 @@ def show_flagged_transactions(conn):
     
     if flagged_transactions.empty:
         print("No flagged transactions found.")
-    else:
-        print_dataframe(flagged_transactions)
-    
+        return
+
+    print_dataframe(flagged_transactions)
+
     while True:
         action = get_user_choice("\nDo you want to: \n1. Unflag a transaction \n2. Go back\nEnter your choice: ", range(1, 3))
         
