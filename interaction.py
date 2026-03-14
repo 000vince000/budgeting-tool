@@ -6,7 +6,7 @@ from helpers import print_ascii_title, get_user_specified_date, print_divider, p
 from transactions import (dig_into_category, show_biggest_oneoff_expenses,
                           review_extraordinary_spendings, set_budget,
                           add_adjustment_transaction, set_goals,
-                          show_flagged_transactions, dig_into_category_group, search_transactions_by_keyword)  # Add this import
+                          show_flagged_transactions, dig_into_category_group, search_transactions_by_keyword)
 
 def run_visualize_script(year, month):
     script_path = os.path.join(os.path.dirname(__file__), 'visualize-results.py')

@@ -115,13 +115,11 @@ def amortize_transaction(conn, df, year, month):
         db_operations.update_transaction_memo(conn, transaction_id, new_memo)
         
         # Create new transactions for the remaining months
-        inserted_ids = []
         for i in range(1, months):
             new_date = original_date + relativedelta(months=i)
             new_memo = f"{memo} {i+1}/{months} amortized transaction. Original transaction ID: {transaction_id}"
             new_id = db_operations.get_next_sequence_value(conn, 'consolidated_transactions_id_seq')
             db_operations.insert_amortized_transaction(conn, new_id, card, new_date, description, category, monthly_amount, new_memo)
-            inserted_ids.append(new_id)
         
         conn.commit()
         print(f"Transaction {transaction_id} has been amortized over {months} months.")
@@ -407,15 +405,6 @@ def validate_date(date_string):
     except ValueError:
         print("Invalid date format. Please use YYYY-MM-DD.")
         return False
-
-def flag_transaction(conn, df):
-    transaction_id = get_user_input("Enter the ID of the transaction to flag: ", int, lambda x: x in df['id'].values)
-    
-    try:
-        db_operations.flag_transaction(conn, transaction_id)
-        print(f"Transaction {transaction_id} has been flagged.")
-    except Exception as e:
-        print(f"An error occurred while flagging the transaction: {str(e)}")
 
 def ask_to_flag_transaction(conn, df):
     transaction_id = get_user_input("Enter the ID of the transaction to flag: ", int, lambda x: x in df['id'].values)

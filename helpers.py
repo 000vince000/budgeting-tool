@@ -1,7 +1,6 @@
-import pandas as pd  # Add this line at the top of the file
+import pandas as pd
 from datetime import datetime, date
 from dateutil.relativedelta import relativedelta
-import pdb
 def print_numbered_list(items, start=1):
     for i, item in enumerate(items, start):
         print(f"{i}. {item}")

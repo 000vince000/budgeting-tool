@@ -14,9 +14,8 @@ from db_operations import (
 )
 
 input_lock = threading.Lock()
-debugLevel = None
 
-def get_user_choice(prompt, options):
+def _select_from_list(prompt, options):
     while True:
         print(prompt)
         for i, option in enumerate(options, 1):
@@ -179,7 +178,7 @@ def main():
     schwab_files = []
 
     while True:
-        bank_choice = get_user_choice("Select bank type:", ["Chase", "Charles Schwab", "Done"])
+        bank_choice = _select_from_list("Select bank type:", ["Chase", "Charles Schwab", "Done"])
         if bank_choice == "Done":
             break
         elif bank_choice == "Chase":

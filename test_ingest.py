@@ -423,21 +423,21 @@ class TestProcessFilesParallel(unittest.TestCase):
 
 
 class TestGetUserChoiceIngest(unittest.TestCase):
-    """Tests for ingest.get_user_choice (returns option string, not int)."""
+    """Tests for ingest._select_from_list (returns option string, not int)."""
 
     def test_valid_choice_returns_option_string(self):
         with patch('builtins.input', side_effect=['2']):
-            result = ingest.get_user_choice("Pick:", ["Chase", "Schwab", "Done"])
+            result = ingest._select_from_list("Pick:", ["Chase", "Schwab", "Done"])
         self.assertEqual(result, "Schwab")
 
     def test_out_of_range_then_valid(self):
         with patch('builtins.input', side_effect=['9', '1']):
-            result = ingest.get_user_choice("Pick:", ["Chase", "Done"])
+            result = ingest._select_from_list("Pick:", ["Chase", "Done"])
         self.assertEqual(result, "Chase")
 
     def test_non_numeric_then_valid(self):
         with patch('builtins.input', side_effect=['abc', '2']):
-            result = ingest.get_user_choice("Pick:", ["Chase", "Done"])
+            result = ingest._select_from_list("Pick:", ["Chase", "Done"])
         self.assertEqual(result, "Done")
 
 
