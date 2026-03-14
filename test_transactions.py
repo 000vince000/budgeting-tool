@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pandas as pd
 from dateutil.relativedelta import relativedelta
 
-from transactions import amortize_transaction, recategorize_all_vendor_transactions
+from transactions import amortize_transaction, recategorize_all_vendor_transactions, recategorize_transaction
 from test_db_operations import _create_schema, _insert_tx
 
 
@@ -175,6 +175,69 @@ class TestRecategorizeAllVendorTransactions(unittest.TestCase):
             "SELECT Category FROM consolidated_transactions WHERE Description = 'Starbucks'"
         ).fetchall()
         self.assertTrue(all(row[0] is None for row in rows))
+
+
+# ---------------------------------------------------------------------------
+# recategorize_transaction (single-transaction path)
+# ---------------------------------------------------------------------------
+
+class TestRecategorizeTransaction(unittest.TestCase):
+    def setUp(self):
+        self.conn = duckdb.connect(':memory:')
+        _create_schema(self.conn)
+        self.conn.execute("INSERT INTO categories VALUES ('Groceries', 'Discretionary')")
+        self.conn.execute("INSERT INTO categories VALUES ('Dining', 'Discretionary')")
+        _insert_tx(self.conn, 1, 'Chase', '2024-01-01', 'Starbucks', 'Dining', amount=-5.0)
+        self.categories = ['Dining', 'Groceries']
+        self.df = pd.DataFrame([{
+            'id': 1, 'Card': 'Chase',
+            'Transaction Date': date(2024, 1, 1),
+            'Description': 'Starbucks', 'Category': 'Dining',
+            'Amount': -5.0, 'Memo': ''
+        }])
+
+    def _get_category(self):
+        return self.conn.execute(
+            "SELECT Category FROM consolidated_transactions WHERE id = 1"
+        ).fetchone()[0]
+
+    def _is_flagged(self):
+        return self.conn.execute(
+            "SELECT COUNT(*) FROM flagged_transactions WHERE transaction_id = 1"
+        ).fetchone()[0] > 0
+
+    def test_recategorizes_to_new_category(self):
+        # user picks tx id=1, category index=2 (Groceries), declines all-vendor
+        with patch('transactions.get_user_input', side_effect=[1, 'n']):
+            with patch('transactions.get_user_choice', return_value=2):
+                recategorize_transaction(self.conn, self.df, self.categories, 'Dining')
+        self.assertEqual(self._get_category(), 'Groceries')
+
+    def test_unflagged_transaction_stays_unflagged(self):
+        # transaction is not flagged — recategorize should not touch flagged_transactions
+        with patch('transactions.get_user_input', side_effect=[1, 'n']):
+            with patch('transactions.get_user_choice', return_value=2):
+                recategorize_transaction(self.conn, self.df, self.categories, 'Dining')
+        self.assertFalse(self._is_flagged())
+
+    def test_flagged_transaction_gets_unflagged_on_recategorize(self):
+        self.conn.execute("INSERT INTO flagged_transactions (transaction_id) VALUES (1)")
+        self.assertTrue(self._is_flagged())
+
+        with patch('transactions.get_user_input', side_effect=[1, 'n']):
+            with patch('transactions.get_user_choice', return_value=2):
+                recategorize_transaction(self.conn, self.df, self.categories, 'Dining')
+
+        self.assertFalse(self._is_flagged())
+        self.assertEqual(self._get_category(), 'Groceries')
+
+    def test_recategorize_to_excluded_sets_null_category(self):
+        # index beyond len(categories) → new_category = None
+        excluded_index = len(self.categories) + 1
+        with patch('transactions.get_user_input', side_effect=[1, 'n']):
+            with patch('transactions.get_user_choice', return_value=excluded_index):
+                recategorize_transaction(self.conn, self.df, self.categories, 'Dining')
+        self.assertIsNone(self._get_category())
 
 
 if __name__ == '__main__':
