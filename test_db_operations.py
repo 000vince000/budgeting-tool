@@ -290,11 +290,12 @@ class TestCheckRecurringTransaction(unittest.TestCase):
         count = check_recurring_transaction(self.conn, 'UnknownVendor', -10.00, date(2024, 1, 1))
         self.assertEqual(count, 0)
 
-    def test_excludes_same_date(self):
-        # A second Netflix row on the exact same date should not count itself
-        _insert_tx(cls_conn := self.conn, 6, 'Schwab', '2024-01-10', 'Netflix', 'Groceries', amount=-15.99)
-        count = check_recurring_transaction(cls_conn, 'Netflix', -15.99, date(2024, 1, 10))
-        # Jan has 2 rows now, Feb and Mar are still the only *other* dates
+    def test_same_month_different_day_not_counted(self):
+        # A second Netflix row in the same month (different day) should not be counted —
+        # same-month charges are not "recurring" from another month's perspective
+        _insert_tx(self.conn, 6, 'Schwab', '2024-01-20', 'Netflix', 'Groceries', amount=-15.99)
+        count = check_recurring_transaction(self.conn, 'Netflix', -15.99, date(2024, 1, 10))
+        # Only Feb (id=2) and Mar (id=3) are in different months → count = 2
         self.assertEqual(count, 2)
 
 

@@ -131,9 +131,9 @@ def amortize_transaction(conn, df, year, month):
         print(f"An error occurred while amortizing the transaction: {str(e)}")
         print("Rolling back changes...")
 
-def show_p95_expensive_nonrecurring(conn, year, month):
-    print_divider("95th Percentile Most Expensive Non-recurring Spendings")
-    df = db_operations.show_p95_expensive_nonrecurring_for_latest_month(conn, year, month)
+def show_biggest_oneoff_expenses(conn, year, month):
+    print_divider("Biggest One-Off Expenses")
+    df = db_operations.get_biggest_oneoff_expenses(conn, year, month)
     if df is None or df.empty:
         print("No non-recurring expenses found.")
     else:

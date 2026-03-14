@@ -3,7 +3,7 @@ import os
 import importlib.util
 from datetime import datetime
 from helpers import print_ascii_title, get_user_specified_date, print_divider, print_numbered_list, get_user_choice
-from transactions import (dig_into_category, show_p95_expensive_nonrecurring,
+from transactions import (dig_into_category, show_biggest_oneoff_expenses,
                           review_extraordinary_spendings, set_budget,
                           add_adjustment_transaction, set_goals,
                           show_flagged_transactions, dig_into_category_group, search_transactions_by_keyword)  # Add this import
@@ -22,7 +22,7 @@ def main_menu(conn, year, month):
         "Search transactions by keyword",
         "Dig into a specific category",
         "Dig into a specific category group",
-        "See 85th percentile most expensive nonrecurring spendings",
+        "See biggest one-off expenses",
         "Review extraordinary spendings",
         "Set budget",
         "Add an adjustment transaction",
@@ -51,7 +51,7 @@ def main_menu(conn, year, month):
         elif choice == 5:
             dig_into_category_group(conn, year, month)
         elif choice == 6:
-            show_p95_expensive_nonrecurring(conn, year, month)
+            show_biggest_oneoff_expenses(conn, year, month)
         elif choice == 7:
             review_extraordinary_spendings(conn, year, month)
         elif choice == 8:

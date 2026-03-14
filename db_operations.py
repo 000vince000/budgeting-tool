@@ -152,7 +152,7 @@ def fetch_transactions_by_categories(conn, categories, year, month):
     """
     return query_and_return_df(conn, query, [year, month])
     
-def show_p95_expensive_nonrecurring_for_latest_month(conn, year, month):
+def get_biggest_oneoff_expenses(conn, year, month):
     query = """
     WITH specified_month AS (
         SELECT MAKE_DATE(?, ?, 1) AS month
@@ -168,7 +168,7 @@ def show_p95_expensive_nonrecurring_for_latest_month(conn, year, month):
             FROM consolidated_transactions t2
             WHERE t2.Description = t1.Description 
               AND ABS(t2.Amount) BETWEEN ABS(t1.Amount) * 0.95 AND ABS(t1.Amount) * 1.05
-              AND t2."Transaction Date" != t1."Transaction Date"
+              AND DATE_TRUNC('month', t2."Transaction Date") != DATE_TRUNC('month', t1."Transaction Date")
           )
     ),
     percentile_calc AS (
@@ -357,8 +357,7 @@ def get_p85_for_category(conn, category, year, month):
     SELECT PERCENTILE_CONT(0.85) WITHIN GROUP (ORDER BY ABS(Amount))
     FROM consolidated_transactions
     WHERE Category = ?
-      AND EXTRACT(YEAR FROM "Transaction Date") = ?
-      AND EXTRACT(MONTH FROM "Transaction Date") = ?
+      AND DATE_TRUNC('month', "Transaction Date") != MAKE_DATE(?, ?, 1)
     """
     return execute_scalar_query(conn, query, [category, year, month])
 
@@ -389,11 +388,11 @@ def get_p90_across_categories(conn, year, month, excluded_categories):
 
 def check_recurring_transaction(conn, description, amount, transaction_date):
     query = """
-    SELECT COUNT(*) 
+    SELECT COUNT(*)
     FROM consolidated_transactions
-    WHERE Description = ? 
+    WHERE Description = ?
       AND ABS(Amount) = ABS(?)
-      AND "Transaction Date" != ?
+      AND DATE_TRUNC('month', "Transaction Date") != DATE_TRUNC('month', ?)
     """
     return execute_scalar_query(conn, query, [description, amount, transaction_date])
 
