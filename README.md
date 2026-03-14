@@ -1,74 +1,73 @@
 # Budgeting Tool
 
-This is a comprehensive budgeting tool that helps you manage your finances by tracking expenses, setting budgets, and visualizing spending patterns.
+A personal finance CLI built on embedded DuckDB. Import bank transactions, categorize them, set budgets, flag anomalies, and review spending patterns — all from a terminal menu.
 
-## Features
+## Setup
 
-- Import transactions from Chase and Charles Schwab CSV files
-- Categorize transactions automatically and manually
-- Set and manage budgets for different categories
-- Visualize spending patterns with charts
-- Store data in a DuckDB database for efficient querying
-- Set goals and track progress for different categories
-- Display goal progress and breakdown items
+```bash
+# Install dependencies
+pip install -r requirements.txt
 
-## Files and Their Functions
+# First-time only: create schema and seed categories
+python create_schema.py
+python populate-seeddata-into-duckdb.py
+```
 
-### Main Scripts
+## Usage
 
-1. `interaction.py`: The main interface for user interaction. It provides a menu to view spending profiles, set budgets, and manage goals.
+```bash
+# Main interactive menu
+python interaction.py
 
-2. `ingest.py`: Handles the import of transaction data from CSV files. It processes both Chase and Charles Schwab formats.
+# Import transactions from Chase or Schwab CSVs
+python ingest.py
 
-3. `visualize-results.py`: Creates visualizations of spending data using matplotlib and displays goal progress.
+# Run tests
+python -m unittest test_transactions.py
+```
 
-4. `create-schema.py`: Sets up the database schema, creating necessary tables and views.
+## Menu Features
 
-### Database Operations
+| Option | Description |
+|---|---|
+| See spending profile | Matplotlib charts: monthly spend by category, goal progress |
+| See flagged transactions | Review and unflag previously flagged transactions |
+| Search transactions by keyword | Full-text search across descriptions |
+| Dig into a category | Browse transactions; recategorize, flag, amortize, or memo |
+| Dig into a category group | Same as above, aggregated by group (Revenue, Discretionary, etc.) |
+| See biggest one-off expenses | Top 15% most expensive non-recurring charges this month |
+| Review extraordinary spendings | Categories that overspent their historical median; surfaces the culprit transactions using P85/P90 baselines |
+| Set budget | Assign monthly budget to any category |
+| Add an adjustment transaction | Manually insert a one-off transaction |
+| Set goals | Allocate surplus by percentage across categories/descriptions |
 
-5. `db_operations.py`: Contains functions for database operations like querying, inserting data, retrieving category information, and managing goals.
+## Architecture
 
-6. `populate-seeddata-into-duckdb.py`: Populates the database with initial seed data for categories and category matching patterns.
+```
+interaction.py          ← CLI menu, entry point
+    ├── transactions.py ← business logic (amortization, recategorization, analysis)
+    │       └── db_operations.py ← all SQL / DuckDB reads and writes
+    └── visualize-results.py ← matplotlib charts
+```
 
-7. `bulk-insert-csv-into-duckdb.py`: Provides functionality to bulk insert data from a CSV file into the DuckDB database.
+**Database:** `budgeting-tool.db` (DuckDB, embedded, no server needed)
 
-### SQL Queries
+**Key tables:** `consolidated_transactions`, `categories`, `category_budgets`, `vendor_category_mapping`, `category_matching_patterns`, `surplus_and_deficit_breakdowns`, `surplus_and_deficit_breakdown_items`, `flagged_transactions`
 
-8. `specific-month-summary.sql`: SQL query to generate a summary of a specified month's spending, including budget comparisons and category statistics.
+**Key views:** `current_budgets`, `category_validation_view`, `top_15_vendors_view`
 
-## Setup and Usage
+## Categorization
 
-1. Ensure you have Python 3.x installed along with the required libraries (duckdb, pandas, matplotlib).
+Ingestion auto-categorizes via two mechanisms (in priority order):
+1. **Vendor mapping** (`vendor_category_mapping`) — exact vendor overrides
+2. **Keyword patterns** (`category_matching_patterns`) — substring matches on description
 
-2. Run `create-schema.py` to set up the database structure.
-
-3. Use `populate-seeddata-into-duckdb.py` to add initial category data.
-
-4. Run `interaction.py` to start the main application interface.
-
-5. Use the "Set budget" option to set budgets for different categories.
-
-6. Use `ingest.py` to import transaction data from your bank CSV files.
-
-7. Use the "See latest month's spending profile" option to visualize your spending patterns and goal progress.
+Unknown vendors are prompted interactively during `ingest.py`. Recategorizing a transaction via the menu offers the option to apply the new category to all past and future transactions from that vendor, updating the mapping table.
 
 ## Data Flow
 
-1. Bank CSV files → `ingest.py` → DuckDB database
-2. User input → `interaction.py` → DuckDB database
-3. DuckDB database → `visualize-results.py` → Spending charts and goal progress reports
-
-## Customization
-
-You can customize category mappings and global categories by modifying the seed data in `populate-seeddata-into-duckdb.py`.
-
-## Note
-
-This tool is designed for personal use and may require modifications to work with different bank CSV formats or to meet specific budgeting needs.
-
-## Recent Updates
-
-- Added functionality to set and track goals for different categories
-- Implemented goal progress visualization in the monthly spending profile
-- Enhanced the database schema to support surplus and deficit breakdowns
-- Improved error handling and data validation throughout the application
+```
+Chase/Schwab CSVs → ingest.py → consolidated_transactions
+User actions → interaction.py → transactions.py → db_operations.py → DuckDB
+DuckDB → visualize-results.py → PNG charts
+```
