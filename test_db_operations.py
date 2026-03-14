@@ -254,6 +254,51 @@ class TestTransactionReads(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# check_recurring_transaction
+# ---------------------------------------------------------------------------
+
+class TestCheckRecurringTransaction(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.conn = duckdb.connect(':memory:')
+        _create_schema(cls.conn)
+        cls.conn.execute("INSERT INTO categories VALUES ('Groceries', 'Discretionary')")
+        # Same vendor + same absolute amount on two different dates → genuinely recurring
+        _insert_tx(cls.conn, 1, 'Chase', '2024-01-10', 'Netflix', 'Groceries', amount=-15.99)
+        _insert_tx(cls.conn, 2, 'Chase', '2024-02-10', 'Netflix', 'Groceries', amount=-15.99)
+        _insert_tx(cls.conn, 3, 'Chase', '2024-03-10', 'Netflix', 'Groceries', amount=-15.99)
+        # Same vendor but different amounts → not recurring by amount
+        _insert_tx(cls.conn, 4, 'Chase', '2024-01-05', 'Costco', 'Groceries', amount=-80.00)
+        _insert_tx(cls.conn, 5, 'Chase', '2024-02-05', 'Costco', 'Groceries', amount=-120.00)
+
+    def test_returns_count_of_other_matching_dates(self):
+        # Jan Netflix: Feb and Mar also match → count = 2
+        count = check_recurring_transaction(self.conn, 'Netflix', -15.99, date(2024, 1, 10))
+        self.assertEqual(count, 2)
+
+    def test_positive_and_negative_amount_treated_equally(self):
+        # ABS(Amount) comparison means sign shouldn't matter
+        count = check_recurring_transaction(self.conn, 'Netflix', 15.99, date(2024, 1, 10))
+        self.assertEqual(count, 2)
+
+    def test_no_match_when_amounts_differ(self):
+        # Costco amounts vary — Jan entry should not match Feb
+        count = check_recurring_transaction(self.conn, 'Costco', -80.00, date(2024, 1, 5))
+        self.assertEqual(count, 0)
+
+    def test_no_match_for_unknown_vendor(self):
+        count = check_recurring_transaction(self.conn, 'UnknownVendor', -10.00, date(2024, 1, 1))
+        self.assertEqual(count, 0)
+
+    def test_excludes_same_date(self):
+        # A second Netflix row on the exact same date should not count itself
+        _insert_tx(cls_conn := self.conn, 6, 'Schwab', '2024-01-10', 'Netflix', 'Groceries', amount=-15.99)
+        count = check_recurring_transaction(cls_conn, 'Netflix', -15.99, date(2024, 1, 10))
+        # Jan has 2 rows now, Feb and Mar are still the only *other* dates
+        self.assertEqual(count, 2)
+
+
+# ---------------------------------------------------------------------------
 # Transaction writes
 # ---------------------------------------------------------------------------
 
