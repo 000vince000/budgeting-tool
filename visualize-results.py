@@ -7,7 +7,10 @@ from db_operations import query_and_return_df, get_month_summary, execute_query,
 import math
 from transactions import calculate_and_conditionally_insert_monthly_breakdowns
 import json
-import hashlib  # Add this import
+import hashlib
+from rich.console import Console
+from rich.table import Table
+from rich import box
 
 def print_divider(title):
     print("\n" + "=" * 40)
@@ -37,6 +40,94 @@ def create_plot(df):
                  ha='center', va='bottom')
 
     plt.gca().yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'${int(x):,}'))
+
+def _spending_color(value, p50, p85):
+    if value == 0:
+        return "dim"
+    if p85 > 0 and value > p85 * 1.25:
+        return "bright_red"
+    if p85 > 0 and value > p85:
+        return "red"
+    if p85 > 0 and value > p85 * 0.75:
+        return "orange1"
+    if p50 > 0 and value > p50:
+        return "yellow"
+    if p50 > 0 and value > p50 * 0.5:
+        return "green"
+    return "bright_green"
+
+def display_cli_spending_table(df, month_name, year):
+    SIGNIFICANCE_THRESHOLD = 10  # hide categories where both this month and p85 are below this
+    df = df[(df['specified_month_sum'] >= SIGNIFICANCE_THRESHOLD) | (df['p85_monthly_sum'] >= SIGNIFICANCE_THRESHOLD)].copy()
+
+    if df.empty:
+        print("No significant spending to display.")
+        return
+
+    max_val = df['specified_month_sum'].max()
+    BAR_WIDTH = 20
+
+    def make_bar(value, color):
+        if max_val == 0:
+            return " " * BAR_WIDTH
+        filled = round((value / max_val) * BAR_WIDTH)
+        return f"[{color}]{'█' * filled}[/{color}][dim]{'░' * (BAR_WIDTH - filled)}[/dim]"
+
+    def budget_style(status):
+        if not status:
+            return ""
+        if "Over" in status:
+            return f"[red]{status}[/red]"
+        if "Under" in status:
+            return f"[green]{status}[/green]"
+        return status
+
+    console = Console()
+    table = Table(
+        title=f"Spending — {month_name} {year}",
+        box=box.SIMPLE_HEAVY,
+        show_lines=False,
+        pad_edge=True,
+    )
+    table.add_column("Category", style="bold", no_wrap=True)
+    table.add_column("", no_wrap=True)  # bar
+    table.add_column("This Month", justify="right")
+    table.add_column("P50", justify="right", style="dim")
+    table.add_column("P85", justify="right", style="dim")
+    table.add_column("Budget Status", no_wrap=True)
+
+    for _, row in df.iterrows():
+        color = _spending_color(row['specified_month_sum'], row['p50_monthly_sum'], row['p85_monthly_sum'])
+        table.add_row(
+            row['category'],
+            make_bar(row['specified_month_sum'], color),
+            f"[{color}]${row['specified_month_sum']:,.0f}[/{color}]",
+            f"${row['p50_monthly_sum']:,.0f}",
+            f"${row['p85_monthly_sum']:,.0f}",
+            budget_style(row['budget_status']),
+        )
+
+    console.print(table)
+
+def open_graph(df, month_name, year):
+    output_file = f'spending_comparison_{month_name}_{year}.png'
+    create_plot(df)
+    temp_file = 'temp_plot.png'
+    plt.savefig(temp_file, dpi=300, bbox_inches='tight')
+    new_hash = get_file_hash(temp_file)
+    if os.path.exists(output_file):
+        existing_hash = get_file_hash(output_file)
+        if new_hash == existing_hash:
+            print(f"Plot unchanged. Keeping existing file: {output_file}")
+            os.remove(temp_file)
+        else:
+            os.replace(temp_file, output_file)
+            print(f"Plot updated. Saved as: {output_file}")
+    else:
+        os.rename(temp_file, output_file)
+        print(f"New plot saved as: {output_file}")
+    full_path = os.path.abspath(output_file)
+    webbrowser.open(f'file://{full_path}')
 
 # calculate net_income, per categories.category_group, as revenue - cost of revenue - discretionary_expenses - non_discretionary_expenses
 def calculate_net_income(conn, year, month):
@@ -199,44 +290,14 @@ def main(year, month):
     db_name = 'budgeting-tool.db'
     conn = duckdb.connect(db_name)
 
-    # Use the provided year and month instead of asking for user input
-    # TODO: query doesn't take into account positive data like Health for September 2024
     df = get_month_summary(conn, year, month)
-    # Get the month name from the dataframe
     month_name = df['Month'].iloc[0]
-    output_file = f'spending_comparison_{month_name}_{year}.png'
-    
-    # print_divider(f"Month Summary - {month_name} {year}")
-    # print(df.drop(columns=['Month', 'Year']))  # Drop Month and Year columns from display
- 
+
     calculate_net_income(conn, year, month)
 
     df_filtered = df[df['category_group'] != 'Revenue'].sort_values('specified_month_sum', ascending=False)
 
     display_goal_progress(conn, year, month)
-    create_plot(df_filtered)
-
-    # Save the plot to a temporary file
-    temp_file = 'temp_plot.png'
-    plt.savefig(temp_file, dpi=300, bbox_inches='tight')
-    
-    # Calculate hash of the new plot
-    new_hash = get_file_hash(temp_file)
-
-    # Check if the output file already exists
-    if os.path.exists(output_file):
-        existing_hash = get_file_hash(output_file)
-        if new_hash == existing_hash:
-            print(f"Plot unchanged. Keeping existing file: {output_file}")
-            os.remove(temp_file)  # Remove the temporary file
-        else:
-            os.replace(temp_file, output_file)
-            print(f"Plot updated. Saved as: {output_file}")
-    else:
-        os.rename(temp_file, output_file)
-        print(f"New plot saved as: {output_file}")
-
-    full_path = os.path.abspath(output_file)
-    webbrowser.open(f'file://{full_path}')
+    display_cli_spending_table(df_filtered, month_name, year)
 
     conn.close()
