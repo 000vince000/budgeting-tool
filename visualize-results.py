@@ -177,17 +177,22 @@ def calculate_net_income(conn, year, month):
             subtotal = r['subtotal']
             p50 = r['p50']
             p85 = r['p85']
-            display_val = abs(subtotal)
             if group == 'Revenue':
                 color = _income_color(subtotal, p50, p85)
+                table.add_row(
+                    label,
+                    f"[{color}]${subtotal:,.2f}[/{color}]",
+                    f"${p50:,.2f}",
+                    f"${p85:,.2f}",
+                )
             else:
-                color = _spending_color(display_val, p50, p85)
-            table.add_row(
-                label,
-                f"[{color}]${display_val:,.2f}[/{color}]",
-                f"${p50:,.2f}",
-                f"${p85:,.2f}",
-            )
+                color = _spending_color(abs(subtotal), p50, p85)
+                table.add_row(
+                    label,
+                    f"[{color}]-${abs(subtotal):,.2f}[/{color}]",
+                    f"-${p50:,.2f}",
+                    f"-${p85:,.2f}",
+                )
         else:
             table.add_row(label, "[dim]$0.00[/dim]", "—", "—")
 
