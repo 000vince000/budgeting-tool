@@ -45,7 +45,12 @@ def _credentials():
 
 
 def get_client():
-    """Return an authenticated schwab-py client. Opens browser if re-auth is needed."""
+    """Return an authenticated schwab-py client.
+
+    If the token file exists and the refresh token is still valid, returns immediately.
+    Otherwise (no file, or refresh token expired after 7 days), opens the browser for
+    a full OAuth re-auth so the caller never has to run --auth separately.
+    """
     import schwab
 
     api_key, app_secret = _credentials()
@@ -53,8 +58,20 @@ def get_client():
         try:
             return schwab.auth.client_from_token_file(str(TOKEN_PATH), api_key, app_secret)
         except Exception:
-            pass
-    print("No valid Schwab token found. A browser window will open for authentication.")
+            # Token file is corrupt or unreadable — fall through to re-auth.
+            TOKEN_PATH.unlink(missing_ok=True)
+
+    print("Opening browser for Schwab authentication…")
+    return schwab.auth.easy_client(api_key, app_secret, CALLBACK_URL, str(TOKEN_PATH))
+
+
+def _reauth():
+    """Refresh token has expired (7-day Schwab limit). Delete stale token and re-authenticate."""
+    import schwab
+
+    print("Schwab token expired (7-day limit). A browser window will open for re-authentication.")
+    TOKEN_PATH.unlink(missing_ok=True)
+    api_key, app_secret = _credentials()
     return schwab.auth.easy_client(api_key, app_secret, CALLBACK_URL, str(TOKEN_PATH))
 
 
@@ -65,10 +82,14 @@ def fetch_transactions(start_date: date, end_date: date) -> pd.DataFrame:
         Card, Transaction Date (MM/DD/YYYY string), Description,
         Category, Type, Amount, Memo
     Amount follows the existing convention: negative = spending, positive = income.
+    Automatically re-authenticates via browser if the 7-day refresh token has expired.
     """
     client = get_client()
 
     resp = client.get_account_numbers()
+    if resp.status_code == 401:
+        client = _reauth()
+        resp = client.get_account_numbers()
     resp.raise_for_status()
     accounts = resp.json()
 
