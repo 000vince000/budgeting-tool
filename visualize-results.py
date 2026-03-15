@@ -3,7 +3,7 @@ import pandas as pd
 import duckdb
 import matplotlib.pyplot as plt
 import webbrowser
-from db_operations import query_and_return_df, get_month_summary, execute_query, get_active_breakdowns, get_breakdown_items, get_actual_spending, get_goals_and_breakdown_items, get_breakdown_items_by_date, get_subtotal_by_category_group_for_month
+from db_operations import query_and_return_df, get_month_summary, execute_query, get_active_breakdowns, get_breakdown_items, get_actual_spending, get_goals_and_breakdown_items, get_breakdown_items_by_date, get_subtotal_by_category_group_for_month, get_category_group_summary_with_percentiles
 import math
 from transactions import calculate_and_conditionally_insert_monthly_breakdowns
 import json
@@ -40,6 +40,19 @@ def create_plot(df):
                  ha='center', va='bottom')
 
     plt.gca().yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'${int(x):,}'))
+
+def _income_color(value, p50, p85):
+    if value == 0:
+        return "dim"
+    if p85 > 0 and value >= p85 * 1.25:
+        return "bright_green"
+    if p85 > 0 and value >= p85:
+        return "green"
+    if p85 > 0 and value >= p85 * 0.75:
+        return "yellow"
+    if p50 > 0 and value >= p50 * 0.5:
+        return "orange1"
+    return "red"
 
 def _spending_color(value, p50, p85):
     if value == 0:
@@ -131,34 +144,63 @@ def open_graph(df, month_name, year):
 
 # calculate net_income, per categories.category_group, as revenue - cost of revenue - discretionary_expenses - non_discretionary_expenses
 def calculate_net_income(conn, year, month):
-    subtotal_by_category_group = get_subtotal_by_category_group_for_month(conn, year, month)
-    
-    # Create a dictionary to store category group totals, defaulting to 0
-    category_totals = {
-        'Revenue': 0,
-        'Cost of revenue': 0,
-        'Discretionary': 0,
-        'Non-discretionary': 0,
-        'Misc': 0
+    GROUPS = ['Revenue', 'Cost of revenue', 'Discretionary', 'Non-discretionary', 'Misc']
+    EXPENSE_LABEL = {
+        'Revenue': 'Revenue',
+        'Cost of revenue': '- Cost of Revenue',
+        'Discretionary': '- Discretionary',
+        'Non-discretionary': '- Non-Discretionary',
+        'Misc': '- Misc',
     }
-    
-    # Update values from DataFrame if they exist
-    if not subtotal_by_category_group.empty:
-        for _, row in subtotal_by_category_group.iterrows():
-            if row['category_group'] in category_totals:
-                category_totals[row['category_group']] = row['subtotal']
-    
-    net_income = sum(category_totals.values())
-    
-    print_divider("Income and Expense Summary")
-    print(f"Revenue:                     ${category_totals['Revenue']:,.2f}")
-    print(f"- Cost of Revenue:            ${category_totals['Cost of revenue']:,.2f}")
-    print(f"- Discretionary Expenses:     ${category_totals['Discretionary']:,.2f}")
-    print(f"- Non-Discretionary Expenses: ${category_totals['Non-discretionary']:,.2f}")
-    print(f"- Misc Expenses:              ${category_totals['Misc']:,.2f}")
-    print("----------------------------------------")
-    print(f"Net Income:                   ${net_income:,.2f}")
 
+    df = get_category_group_summary_with_percentiles(conn, year, month)
+    rows = {row['category_group']: row for _, row in df.iterrows()} if not df.empty else {}
+
+    net_income = sum(rows[g]['subtotal'] for g in GROUPS if g in rows)
+
+    console = Console()
+    table = Table(
+        title="Income and Expense Summary",
+        box=box.SIMPLE_HEAVY,
+        show_lines=False,
+        pad_edge=True,
+    )
+    table.add_column("Group", style="bold", no_wrap=True)
+    table.add_column("This Month", justify="right")
+    table.add_column("P50", justify="right", style="dim")
+    table.add_column("P85", justify="right", style="dim")
+
+    for group in GROUPS:
+        label = EXPENSE_LABEL[group]
+        if group in rows:
+            r = rows[group]
+            subtotal = r['subtotal']
+            p50 = r['p50']
+            p85 = r['p85']
+            display_val = abs(subtotal)
+            if group == 'Revenue':
+                color = _income_color(subtotal, p50, p85)
+            else:
+                color = _spending_color(display_val, p50, p85)
+            table.add_row(
+                label,
+                f"[{color}]${display_val:,.2f}[/{color}]",
+                f"${p50:,.2f}",
+                f"${p85:,.2f}",
+            )
+        else:
+            table.add_row(label, "[dim]$0.00[/dim]", "—", "—")
+
+    net_color = "green" if net_income >= 0 else "red"
+    table.add_section()
+    table.add_row(
+        "[bold]Net Income[/bold]",
+        f"[bold {net_color}]${net_income:,.2f}[/bold {net_color}]",
+        "",
+        "",
+    )
+
+    console.print(table)
     return net_income
 
 def get_user_specified_date():

@@ -318,6 +318,47 @@ def get_subtotal_by_category_group_for_month(conn, year, month):
     """
     return query_and_return_df(conn, query, [year, month])
 
+def get_category_group_summary_with_percentiles(conn, year, month):
+    query = """
+    WITH monthly_group_totals AS (
+        SELECT
+            c.category_group,
+            DATE_TRUNC('month', t."Transaction Date") AS month,
+            SUM(t.amount) AS monthly_total
+        FROM consolidated_transactions t
+        JOIN categories c USING (category)
+        WHERE category IS NOT NULL
+        GROUP BY 1, 2
+    ),
+    group_stats AS (
+        SELECT
+            category_group,
+            ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ABS(monthly_total)), 2) AS p50,
+            ROUND(PERCENTILE_CONT(0.85) WITHIN GROUP (ORDER BY ABS(monthly_total)), 2) AS p85
+        FROM monthly_group_totals
+        GROUP BY 1
+    ),
+    current_month AS (
+        SELECT
+            c.category_group,
+            SUM(t.amount) AS subtotal
+        FROM consolidated_transactions t
+        JOIN categories c USING (category)
+        WHERE EXTRACT(YEAR FROM t."Transaction Date") = ?
+        AND EXTRACT(MONTH FROM t."Transaction Date") = ?
+        AND category IS NOT NULL
+        GROUP BY 1
+    )
+    SELECT
+        cm.category_group,
+        COALESCE(cm.subtotal, 0) AS subtotal,
+        COALESCE(gs.p50, 0) AS p50,
+        COALESCE(gs.p85, 0) AS p85
+    FROM current_month cm
+    LEFT JOIN group_stats gs USING (category_group)
+    """
+    return query_and_return_df(conn, query, [year, month])
+
 def get_net_income_for_month(conn, year, month):
     query = """
     SELECT SUM(amount) as net_income

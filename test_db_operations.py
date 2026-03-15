@@ -14,6 +14,7 @@ from db_operations import (
     get_actual_spending,
     get_biggest_oneoff_expenses,
     get_categories_with_groups_from_db,
+    get_category_group_summary_with_percentiles,
     get_category_mapping_from_db,
     get_flagged_transactions,
     get_global_categories_from_db,
@@ -662,6 +663,65 @@ class TestMappingAndBudgetWrites(unittest.TestCase):
     def test_insert_category_budget_invalid_category_raises(self):
         with self.assertRaises(Exception):
             insert_category_budget(self.conn, 'FakeCategory', 200)
+
+
+# ---------------------------------------------------------------------------
+# get_category_group_summary_with_percentiles
+# ---------------------------------------------------------------------------
+
+class TestGetCategoryGroupSummaryWithPercentiles(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.conn = duckdb.connect(':memory:')
+        _create_schema(cls.conn)
+        cls.conn.execute("INSERT INTO categories VALUES ('Salary', 'Revenue')")
+        cls.conn.execute("INSERT INTO categories VALUES ('Dining', 'Discretionary')")
+
+        # Three historical months of Revenue: 1000, 2000, 3000
+        # Three historical months of Dining:  100,  200,  300
+        id_ = 1
+        for m, (rev, dine) in enumerate([(1000, 100), (2000, 200), (3000, 300)], start=1):
+            _insert_tx(cls.conn, id_, 'Chase', f'2024-0{m}-15', 'Employer', 'Salary', amount=float(rev))
+            id_ += 1
+            _insert_tx(cls.conn, id_, 'Chase', f'2024-0{m}-20', 'Restaurant', 'Dining', amount=-float(dine))
+            id_ += 1
+
+        # Target month (April 2024): Revenue=2500, Dining=150
+        _insert_tx(cls.conn, id_, 'Chase', '2024-04-15', 'Employer', 'Salary', amount=2500.0)
+        id_ += 1
+        _insert_tx(cls.conn, id_, 'Chase', '2024-04-20', 'Restaurant', 'Dining', amount=-150.0)
+
+    def _row(self, group):
+        df = get_category_group_summary_with_percentiles(self.conn, 2024, 4)
+        match = df[df['category_group'] == group]
+        self.assertFalse(match.empty, f"group '{group}' not in results")
+        return match.iloc[0]
+
+    def test_revenue_subtotal(self):
+        self.assertAlmostEqual(float(self._row('Revenue')['subtotal']), 2500.0)
+
+    def test_dining_subtotal_is_negative(self):
+        # raw subtotal for expenses is negative (stored sign)
+        self.assertAlmostEqual(float(self._row('Discretionary')['subtotal']), -150.0)
+
+    def test_revenue_p50(self):
+        # All Revenue months (current included): sorted [1000, 2000, 2500, 3000]
+        # PERCENTILE_CONT(0.5): pos=0.5*(4-1)=1.5 → 2000 + 0.5*500 = 2250
+        self.assertAlmostEqual(float(self._row('Revenue')['p50']), 2250.0)
+
+    def test_revenue_p85(self):
+        # All Revenue months sorted [1000, 2000, 2500, 3000]
+        # PERCENTILE_CONT(0.85): pos=0.85*(4-1)=2.55 → 2500 + 0.55*500 = 2775
+        self.assertAlmostEqual(float(self._row('Revenue')['p85']), 2775.0)
+
+    def test_dining_p50(self):
+        # All Dining months ABS sorted [100, 150, 200, 300]
+        # PERCENTILE_CONT(0.5): pos=1.5 → 150 + 0.5*50 = 175
+        self.assertAlmostEqual(float(self._row('Discretionary')['p50']), 175.0)
+
+    def test_no_null_values(self):
+        df = get_category_group_summary_with_percentiles(self.conn, 2024, 4)
+        self.assertFalse(df[['subtotal', 'p50', 'p85']].isnull().any().any())
 
 
 if __name__ == '__main__':
