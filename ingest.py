@@ -12,6 +12,7 @@ from db_operations import (
     persist_data_in_db,
     get_db_connection
 )
+from ingest_api import ingest_from_schwab_api, ingest_from_chase_plaid
 
 input_lock = threading.Lock()
 
@@ -51,24 +52,24 @@ def get_category(description, category_map, unique_categories, user_choices):
     for key, value in category_map.items():
         if key.lower() in description.lower():
             return value, False  # False indicates no user intervention
-    
+
     if description in user_choices:
         return user_choices[description], False  # False because this was a previous choice
 
     with input_lock:
         print(f"\nTransaction: {description}")
         print("Choose a category or enter a new one:")
-        
+
         # Sort categories alphabetically, excluding "EXCLUDE"
         sorted_categories = sorted([cat for cat in unique_categories if cat != "EXCLUDE"])
-        
+
         # Add "EXCLUDE" option at the end
         sorted_categories.append("EXCLUDE")
-        
+
         for i, cat in enumerate(sorted_categories, 1):
             print(f"{i}. {cat}")
         print(f"{len(sorted_categories) + 1}. Enter a new category")
-        
+
         while True:
             try:
                 choice = int(input("Enter the number of your choice: "))
@@ -161,7 +162,7 @@ def process_schwab_csv(input_file, global_categories, user_choices, vendor_map, 
 def process_files_parallel(input_files, process_func, global_categories, user_choices, vendor_map, category_map):
     with concurrent.futures.ThreadPoolExecutor() as executor:
         processed_dfs = list(executor.map(lambda f: process_func(f, global_categories, user_choices, vendor_map, category_map), input_files))
-    
+
     processed_dfs = [df for df in processed_dfs if df is not None and not df.empty]
     return pd.concat(processed_dfs, ignore_index=True) if processed_dfs else None
 
@@ -178,13 +179,23 @@ def main():
     schwab_files = []
 
     while True:
-        bank_choice = _select_from_list("Select bank type:", ["Chase", "Charles Schwab", "Done"])
+        bank_choice = _select_from_list("Select import source:", [
+            "Chase (CSV)",
+            "Charles Schwab (CSV)",
+            "Fetch from Schwab (API)",
+            "Fetch from Chase (Plaid)",
+            "Done",
+        ])
         if bank_choice == "Done":
             break
-        elif bank_choice == "Chase":
+        elif bank_choice == "Chase (CSV)":
             chase_files.extend(get_input_files("Chase"))
-        elif bank_choice == "Charles Schwab":
+        elif bank_choice == "Charles Schwab (CSV)":
             schwab_files.extend(get_input_files("Charles Schwab"))
+        elif bank_choice == "Fetch from Schwab (API)":
+            ingest_from_schwab_api(conn, global_categories, user_choices, vendor_map, category_map)
+        elif bank_choice == "Fetch from Chase (Plaid)":
+            ingest_from_chase_plaid(conn, global_categories, user_choices, vendor_map, category_map)
 
     combined_df = pd.DataFrame()
 

@@ -14,3 +14,4 @@ venv/
 000vince000
 *.db.wal
 *.zip
+.env
