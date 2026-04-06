@@ -27,7 +27,7 @@ import token_store
 
 load_dotenv()
 
-PLAID_ENV = "development"  # Switch to "production" after Plaid production approval
+PLAID_ENV = "production"
 
 
 def _plaid_client():
