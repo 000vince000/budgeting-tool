@@ -48,7 +48,6 @@ def _plaid_client():
 
     env_map = {
         "sandbox": plaid.Environment.Sandbox,
-        "development": plaid.Environment.Development,
         "production": plaid.Environment.Production,
     }
     config = Configuration(
