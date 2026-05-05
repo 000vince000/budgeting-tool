@@ -1,4 +1,4 @@
-"""API-based transaction ingestion: Schwab (developer API) and Chase (Plaid).
+"""API-based transaction ingestion: Chase (Plaid).
 
 This module owns the full fetch→categorize→persist pipeline for API sources.
 It is called from ingest.py's menu but has no module-level dependency on it —
@@ -70,35 +70,6 @@ def _apply_category_matching(
                     df.at[index, "Memo"] = (df.at[index, "Memo"] or "") + " manual"
 
     return df[STANDARD_COLUMNS]
-
-
-def ingest_from_schwab_api(conn, global_categories, user_choices, vendor_map, category_map):
-    """Fetch Schwab transactions via the developer API and persist them.
-
-    Prereqs: SCHWAB_CLIENT_ID + SCHWAB_CLIENT_SECRET in .env,
-             schwab-py installed, token created via: python fetch_schwab.py --auth
-    """
-    try:
-        import fetch_schwab
-    except ImportError:
-        print("schwab-py is not installed. Run: pip install schwab-py python-dotenv")
-        return
-
-    start, end = prompt_month()
-    print(f"Fetching Schwab transactions {start} → {end}…")
-    try:
-        df = fetch_schwab.fetch_transactions(start, end)
-    except Exception as e:
-        print(f"Schwab fetch failed: {e}")
-        return
-
-    if df.empty:
-        print("No transactions returned.")
-        return
-
-    print(f"  {len(df)} transactions. Applying category matching…")
-    df = _apply_category_matching(df, vendor_map, category_map, global_categories, user_choices)
-    persist_data_in_db(conn, df, "consolidated_transactions")
 
 
 def ingest_from_chase_plaid(conn, global_categories, user_choices, vendor_map, category_map):
