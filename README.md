@@ -71,3 +71,7 @@ Chase/Schwab CSVs → ingest.py → consolidated_transactions
 User actions → interaction.py → transactions.py → db_operations.py → DuckDB
 DuckDB → visualize-results.py → PNG charts
 ```
+
+## TODO
+
+- **Make the unique index self-healing in `create_schema.py`.** Dedup on `consolidated_transactions` depends on a unique index over `(Card, Transaction Date, Description, Amount)`. Today that index is only created bundled with fresh table creation (`create_table_with_sequence` → `create_unique_index`), and `create_table` uses `CREATE TABLE IF NOT EXISTS` — so on a DB whose table already exists, the index is never backfilled and dedup silently does nothing. Change `create_unique_index` to `CREATE UNIQUE INDEX IF NOT EXISTS …` and ensure it runs against existing tables, so a rebuilt/older DB repairs itself.
