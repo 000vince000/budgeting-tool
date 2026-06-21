@@ -1,13 +1,17 @@
 from datetime import date, datetime
+import duckdb
 import db_operations
 from helpers import print_divider, print_dataframe, get_user_input, get_user_choice, print_numbered_list
 from collections import defaultdict
 from dateutil.relativedelta import relativedelta
 from decimal import Decimal
 
-def dig_into_category(conn, year, month):
-    categories = sorted(db_operations.get_global_categories_from_db(conn))
-    
+def dig_into_category(db_name, year, month):
+    # Connections are opened only around DB work and closed before the next prompt,
+    # so the database lock is released while the user browses/decides at a prompt.
+    with duckdb.connect(db_name) as conn:
+        categories = sorted(db_operations.get_global_categories_from_db(conn))
+
     while True:
         print("\nCategories:")
         print_numbered_list(categories)
@@ -18,7 +22,8 @@ def dig_into_category(conn, year, month):
             break
 
         selected_category = categories[choice - 1]
-        df = db_operations.fetch_transactions_by_category(conn, selected_category, year, month)
+        with duckdb.connect(db_name) as conn:
+            df = db_operations.fetch_transactions_by_category(conn, selected_category, year, month)
 
         if df.empty:
             print(f"No transactions found for {selected_category} in {year}-{month:02d}.")
@@ -26,7 +31,7 @@ def dig_into_category(conn, year, month):
 
         print(f"\nTransactions for {selected_category} in {year}-{month:02d}:")
         print_dataframe(df)
-        
+
         while True:
             print("\nDo you want to:")
             options = ["Recategorize a transaction", "Flag a transaction", "Amortize a transaction", "Add a memo to a transaction", "Move transaction date"]
@@ -36,26 +41,31 @@ def dig_into_category(conn, year, month):
             action = get_user_choice("Enter your choice: ", list(range(1, len(options) + 1)) + ['x'])
 
             if action == 1:
-                recategorize_transaction(conn, df, categories, selected_category)
-                df = db_operations.fetch_transactions_by_category(conn, selected_category, year, month)
+                with duckdb.connect(db_name) as conn:
+                    recategorize_transaction(conn, df, categories, selected_category)
+                    df = db_operations.fetch_transactions_by_category(conn, selected_category, year, month)
                 print("\nUpdated transactions:")
                 print_dataframe(df)
             elif action == 2:
-                ask_to_flag_transaction(conn, df)
+                with duckdb.connect(db_name) as conn:
+                    ask_to_flag_transaction(conn, df)
                 print_dataframe(df)
             elif action == 3:
-                amortize_transaction(conn, df, year, month)
-                df = db_operations.fetch_transactions_by_category(conn, selected_category, year, month)
+                with duckdb.connect(db_name) as conn:
+                    amortize_transaction(conn, df, year, month)
+                    df = db_operations.fetch_transactions_by_category(conn, selected_category, year, month)
                 print("\nUpdated transactions:")
                 print_dataframe(df)
             elif action == 4:
                 transaction_id = get_user_input("Enter the ID of the transaction to add a memo to: ", int, lambda x: x in df['id'].values)
                 new_memo = input("Enter the new memo: ")
-                db_operations.add_memo_to_transaction(conn, transaction_id, new_memo)
+                with duckdb.connect(db_name) as conn:
+                    db_operations.add_memo_to_transaction(conn, transaction_id, new_memo)
                 print_dataframe(df)
             elif action == 5:
-                move_transaction_date(conn, df)
-                df = db_operations.fetch_transactions_by_category(conn, selected_category, year, month)
+                with duckdb.connect(db_name) as conn:
+                    move_transaction_date(conn, df)
+                    df = db_operations.fetch_transactions_by_category(conn, selected_category, year, month)
                 print("\nUpdated transactions:")
                 print_dataframe(df)
             else:

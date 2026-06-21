@@ -15,7 +15,7 @@ def run_visualize_script(year, month):
     spec.loader.exec_module(visualize_module)
     visualize_module.main(year, month)
 
-def main_menu(conn, year, month):
+def main_menu(db_name, year, month):
     menu_options = [
         "See spending profile",
         "See flagged transactions",
@@ -39,44 +39,51 @@ def main_menu(conn, year, month):
         print("=" * 50)  # Add a bottom border
         
         choice = get_user_choice("Enter your choice: ", list(range(1, len(menu_options))) + ['x'])
-        
-        if choice == 1:
-            run_visualize_script(year, month)
-        elif choice == 2:
-            show_flagged_transactions(conn)  # New function call
-        elif choice == 3:
-            search_transactions_by_keyword(conn, year, month)
-        elif choice == 4:
-            dig_into_category(conn, year, month)
-        elif choice == 5:
-            dig_into_category_group(conn, year, month)
-        elif choice == 6:
-            show_biggest_oneoff_expenses(conn, year, month)
-        elif choice == 7:
-            review_extraordinary_spendings(conn, year, month)
-        elif choice == 8:
-            set_budget(conn)
-        elif choice == 9:
-            add_adjustment_transaction(conn, year, month)
-        elif choice == 10:
-            set_goals(conn)
-        elif choice == 11:
+
+        if choice == 11:
             return True  # Signal to change the analysis period
-        elif choice == 'x':
+        if choice == 'x':
             return False  # Signal to exit the program
+        if choice == 1:
+            run_visualize_script(year, month)  # manages its own connection
+            continue
+        if choice == 4:
+            dig_into_category(db_name, year, month)  # manages its own connections
+            continue
+
+        # Open a short-lived connection only for the duration of this action so the
+        # database lock is released while idling at the menu.
+        conn = duckdb.connect(db_name)
+        try:
+            if choice == 2:
+                show_flagged_transactions(conn)
+            elif choice == 3:
+                search_transactions_by_keyword(conn, year, month)
+            elif choice == 5:
+                dig_into_category_group(conn, year, month)
+            elif choice == 6:
+                show_biggest_oneoff_expenses(conn, year, month)
+            elif choice == 7:
+                review_extraordinary_spendings(conn, year, month)
+            elif choice == 8:
+                set_budget(conn)
+            elif choice == 9:
+                add_adjustment_transaction(conn, year, month)
+            elif choice == 10:
+                set_goals(conn)
+        finally:
+            conn.close()
 
 def main():
     print_ascii_title()
     db_name = 'budgeting-tool.db'
-    conn = duckdb.connect(db_name)
 
     while True:
         year, month = get_user_specified_date()
-        change_period = main_menu(conn, year, month)
+        change_period = main_menu(db_name, year, month)
         if not change_period:
             break
 
-    conn.close()
     print("Thank you for using the budgeting tool. Goodbye!")
 
 if __name__ == "__main__":

@@ -6,7 +6,9 @@ from unittest.mock import patch
 import pandas as pd
 from dateutil.relativedelta import relativedelta
 
-from transactions import amortize_transaction, recategorize_all_vendor_transactions, recategorize_transaction, validate_date
+from unittest.mock import MagicMock
+
+from transactions import amortize_transaction, dig_into_category, recategorize_all_vendor_transactions, recategorize_transaction, validate_date
 from test_db_operations import _create_schema, _insert_tx
 
 
@@ -262,6 +264,29 @@ class TestValidateDate(unittest.TestCase):
 
     def test_wrong_order(self):
         self.assertFalse(validate_date('15-01-2024'))
+
+
+class TestDigIntoCategoryConnectionScoping(unittest.TestCase):
+    """dig_into_category should open short-lived connections around DB work and
+    close them (via the `with` context manager) before the next user prompt, so the
+    database lock is not held while the user browses or decides at a prompt."""
+
+    def test_connections_opened_and_closed_per_db_batch(self):
+        non_empty_df = pd.DataFrame([{'id': 1, 'Description': 'X', 'Category': 'Dining', 'Amount': -5.0}])
+        # category 1 -> action 'x' (go back) -> 'x' (back to main menu)
+        with patch('transactions.get_user_choice', side_effect=[1, 'x', 'x']), \
+             patch('transactions.print_dataframe'), \
+             patch('transactions.db_operations.get_global_categories_from_db', return_value=['Dining', 'Groceries']), \
+             patch('transactions.db_operations.fetch_transactions_by_category', return_value=non_empty_df), \
+             patch('transactions.duckdb.connect') as connect:
+            dig_into_category('fake.db', 2026, 4)
+
+        # One connection for the category list, one for fetching the category's
+        # transactions; both opened against db_name and closed (context-managed).
+        self.assertEqual(connect.call_count, 2)
+        for call in connect.call_args_list:
+            self.assertEqual(call.args, ('fake.db',))
+        self.assertEqual(connect.return_value.__exit__.call_count, 2)
 
 
 if __name__ == '__main__':
