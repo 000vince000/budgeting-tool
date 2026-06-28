@@ -1,4 +1,8 @@
 import os
+import sys
+import shutil
+import platform
+import subprocess
 import pandas as pd
 import duckdb
 import matplotlib.pyplot as plt
@@ -128,6 +132,34 @@ def display_cli_spending_table(df, month_name, year):
 
     console.print(table)
 
+def _open_file(path):
+    """Open a file with the OS default application.
+
+    Handles WSL, where webbrowser/xdg-open can't find a default app for images
+    and fail with a gio error. There we hand the file to Windows via explorer.exe
+    (using a Windows-style path from wslpath), preferring wslview if installed.
+    """
+    try:
+        if 'microsoft' in platform.uname().release.lower():  # WSL
+            if shutil.which('wslview'):
+                subprocess.run(['wslview', path], check=False)
+            else:
+                win = subprocess.run(['wslpath', '-w', path],
+                                     capture_output=True, text=True).stdout.strip()
+                # explorer.exe returns a non-zero code even on success, so don't check.
+                subprocess.run(['explorer.exe', win or path], check=False)
+        elif sys.platform == 'darwin':
+            subprocess.run(['open', path], check=False)
+        elif sys.platform.startswith('win'):
+            os.startfile(path)  # noqa: only exists on Windows
+        elif shutil.which('xdg-open'):
+            subprocess.run(['xdg-open', path], check=False)
+        else:
+            webbrowser.open(f'file://{path}')
+    except Exception as e:
+        print(f"Couldn't auto-open the image ({e}). It's saved at: {path}")
+
+
 def open_graph(df, month_name, year):
     output_file = f'spending_comparison_{month_name}_{year}.png'
     create_plot(df)
@@ -146,7 +178,7 @@ def open_graph(df, month_name, year):
         os.rename(temp_file, output_file)
         print(f"New plot saved as: {output_file}")
     full_path = os.path.abspath(output_file)
-    webbrowser.open(f'file://{full_path}')
+    _open_file(full_path)
 
 # calculate net_income, per categories.category_group, as revenue - cost of revenue - discretionary_expenses - non_discretionary_expenses
 def calculate_net_income(conn, year, month):
@@ -339,8 +371,8 @@ def main(year, month):
     3. Calculates and displays the net income for the month.
     4. Display the month's goals and goal breakdown items if they exist.
     5. Display the goal progress as the breakdown item's amount minus the category total.
-    6. Creates a bar plot comparing specified month sum with P50 and P85 markers for each category.
-    7. Saves the plot as an image file and opens it in the default web browser.
+    6. Displays the spending table (category, this-month spend, P50, P85, budget status).
+    7. Optionally, on user confirmation, saves a bar-plot PNG and opens it in the browser.
 
     The function excludes income categories (Business revenue, Salary, Rental income) from the visualization
     to focus on expense categories.
@@ -361,5 +393,8 @@ def main(year, month):
 
     display_goal_progress(conn, year, month)
     display_cli_spending_table(df_filtered, month_name, year)
+
+    if input("\nOpen PNG graph? (y/n): ").strip().lower() == 'y':
+        open_graph(df_filtered, month_name, year)
 
     conn.close()
