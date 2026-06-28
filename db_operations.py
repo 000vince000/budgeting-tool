@@ -58,6 +58,35 @@ def get_categories_with_groups_from_db(conn):
     # Just return the raw query results
     return execute_query(conn, query).fetchall()
 
+def get_category_history(conn, description, amount=None, txn_type=None):
+    """Read-only: how this description and this (amount, type) were categorized before.
+
+    Returns {'by_description': [(category, count), ...],
+             'by_amount':      [(category, count), ...]}, each ordered by count desc.
+    Powers the human-in-loop "seen X times as Y" suggestions for unknown
+    transactions during ingest. Never writes anything.
+    """
+    by_description = execute_query(conn, """
+        SELECT Category, COUNT(*) AS n
+        FROM consolidated_transactions
+        WHERE Description = ? AND Category IS NOT NULL
+        GROUP BY Category ORDER BY n DESC
+    """, [description]).fetchall()
+
+    by_amount = []
+    if amount is not None and txn_type is not None:
+        by_amount = execute_query(conn, """
+            SELECT Category, COUNT(*) AS n
+            FROM consolidated_transactions
+            WHERE Amount = CAST(? AS DECIMAL(18,2)) AND Type = ? AND Category IS NOT NULL
+            GROUP BY Category ORDER BY n DESC
+        """, [amount, txn_type]).fetchall()
+
+    return {
+        "by_description": [(r[0], r[1]) for r in by_description],
+        "by_amount": [(r[0], r[1]) for r in by_amount],
+    }
+
 # TODO: refactor this to be more specific rather than generic
 def persist_data_in_db(conn, df, quoted_table_name):
     cols = df.columns.to_list()

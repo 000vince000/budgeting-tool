@@ -14,6 +14,7 @@ from db_operations import (
     get_db_connection,
     insert_category,
     insert_category_matching_pattern,
+    get_category_history,
 )
 
 CATEGORY_GROUPS = ["Revenue", "Cost of revenue", "Non-discretionary", "Discretionary", "Misc"]
@@ -88,8 +89,58 @@ def _maybe_save_match_rule(conn, description, category, category_map, unique_cat
     except Exception as e:
         print(f"  Could not save match rule: {e}")
 
+def _fmt_amount(amount):
+    if amount is None:
+        return ""
+    return f"-${abs(amount):,.2f}" if amount < 0 else f"${amount:,.2f}"
+
+
+def _save_exact_vendor_rule(conn, description, category, category_map, unique_categories):
+    """Promote an exact-vendor suggestion to a permanent keyword rule (the 'a' shortcut).
+
+    Uses the full description as the keyword (an exact-vendor match), so it only
+    makes sense for description-sourced suggestions, never amount/check ones.
+    """
+    if conn is None:
+        return
+    try:
+        insert_category_matching_pattern(conn, description, category)
+        conn.commit()
+        category_map[description] = category  # apply for the rest of this run
+    except Exception as e:
+        print(f"  Could not save rule: {e}")
+
+
+def _history_suggestion(conn, description, amount, txn_type):
+    """Return (suggested_category, source) from history, printing a reminder.
+
+    source is 'description' or 'amount'. Returns (None, None) when there's no
+    usable history; for a split (>=2 categories) it prints a breakdown + nudge
+    and returns (None, source) so the caller offers no Enter-default.
+    """
+    if conn is None:
+        return None, None
+    try:
+        hist = get_category_history(conn, description, amount, txn_type)
+    except Exception:
+        return None, None  # a history lookup must never block an import
+
+    desc_hist, amt_hist = hist["by_description"], hist["by_amount"]
+    primary, source = (desc_hist, "description") if desc_hist else (amt_hist, "amount")
+    if not primary:
+        return None, None
+
+    label = f"'{description}'" if source == "description" else f"{_fmt_amount(amount)} {txn_type}"
+    if len(primary) == 1:
+        cat, cnt = primary[0]
+        print(f"  \U0001F4A1 {label} seen {cnt}x before, all '{cat}'.")
+        return cat, source
+    breakdown = ", ".join(f"{c} x{n}" for c, n in primary)
+    print(f"  ⚠ {label} is split: {breakdown} — consider cleaning this up later in the app.")
+    return None, source
+
 # this function prompts user for choice of category
-def get_category(description, category_map, unique_categories, user_choices, conn=None):
+def get_category(description, category_map, unique_categories, user_choices, conn=None, amount=None, txn_type=None):
     for key, value in category_map.items():
         if key.lower() in description.lower():
             return value, False  # False indicates no user intervention
@@ -98,7 +149,11 @@ def get_category(description, category_map, unique_categories, user_choices, con
         return user_choices[description], False  # False because this was a previous choice
 
     with input_lock:
-        print(f"\nTransaction: {description}")
+        suffix = f"  ({_fmt_amount(amount)}, {txn_type})" if amount is not None else ""
+        print(f"\nTransaction: {description}{suffix}")
+
+        suggestion, source = _history_suggestion(conn, description, amount, txn_type)
+
         print("Choose a category or enter a new one:")
 
         # Sort categories alphabetically, excluding "EXCLUDE"
@@ -111,25 +166,48 @@ def get_category(description, category_map, unique_categories, user_choices, con
             print(f"{i}. {cat}")
         print(f"{len(sorted_categories) + 1}. Enter a new category")
 
+        if suggestion is not None:
+            can_always = source == "description"
+            prompt = (f"[Enter=accept '{suggestion}'"
+                      + (", a=always make it a rule" if can_always else "")
+                      + ", or a number]: ")
+        else:
+            prompt = "Enter the number of your choice: "
+
         while True:
+            raw = input(prompt).strip()
+
+            # Enter accepts the suggestion (no keyword rule saved — it's a confirm).
+            if suggestion is not None and raw == "":
+                user_choices[description] = suggestion
+                return suggestion, True
+            # 'a' = always: promote an exact-vendor suggestion to a permanent rule.
+            if suggestion is not None and source == "description" and raw.lower() == "a":
+                user_choices[description] = suggestion
+                _save_exact_vendor_rule(conn, description, suggestion, category_map, unique_categories)
+                return suggestion, True
+
             try:
-                choice = int(input("Enter the number of your choice: "))
-                if 1 <= choice <= len(sorted_categories):
-                    selected_category = sorted_categories[choice - 1]
-                    user_choices[description] = selected_category
-                    _maybe_save_match_rule(conn, description, selected_category,
-                                           category_map, unique_categories, is_new=False)
-                    return selected_category, True  # True indicates user intervention
-                elif choice == len(sorted_categories) + 1:
-                    new_category = input("Enter the new category: ").strip()
-                    user_choices[description] = new_category
-                    _maybe_save_match_rule(conn, description, new_category,
-                                           category_map, unique_categories, is_new=True)
-                    return new_category, True  # True indicates user intervention
-                else:
-                    print("Invalid choice. Please try again.")
+                choice = int(raw)
             except ValueError:
-                print("Invalid input. Please enter a number.")
+                hint = " (or Enter to accept)" if suggestion is not None else ""
+                print(f"Invalid input. Please enter a number{hint}.")
+                continue
+
+            if 1 <= choice <= len(sorted_categories):
+                selected_category = sorted_categories[choice - 1]
+                user_choices[description] = selected_category
+                _maybe_save_match_rule(conn, description, selected_category,
+                                       category_map, unique_categories, is_new=False)
+                return selected_category, True  # True indicates user intervention
+            elif choice == len(sorted_categories) + 1:
+                new_category = input("Enter the new category: ").strip()
+                user_choices[description] = new_category
+                _maybe_save_match_rule(conn, description, new_category,
+                                       category_map, unique_categories, is_new=True)
+                return new_category, True  # True indicates user intervention
+            else:
+                print("Invalid choice. Please try again.")
 
 def apply_category_mapping(description, vendor_map, keyword_map):
     if description in vendor_map:
@@ -158,7 +236,8 @@ def process_chase_csv(input_file, global_categories, user_choices, vendor_map, c
             df.at[index, 'Category'] = mapped_category
             df.at[index, 'Memo'] += f' auto; was: {old_category}'
         elif pd.isna(row['Category']) or row['Category'] in ["Bills & Utilities", "Professional Services", "Personal", ""]:
-            category, user_intervened = get_category(row['Description'], category_map, global_categories, user_choices, conn)
+            category, user_intervened = get_category(row['Description'], category_map, global_categories,
+                                                     user_choices, conn, row['Amount'], row.get('Type'))
             if category == "EXCLUDE":
                 df.at[index, 'Category'] = None
             else:
@@ -194,7 +273,8 @@ def process_schwab_csv(input_file, global_categories, user_choices, vendor_map, 
             df.at[index, 'Category'] = mapped_category
             df.at[index, 'Memo'] += ' auto'
         else:
-            category, user_intervened = get_category(row['Description'], category_map, global_categories, user_choices, conn)
+            category, user_intervened = get_category(row['Description'], category_map, global_categories,
+                                                     user_choices, conn, row['Amount'], row['Type'])
             if category == "EXCLUDE":
                 df.at[index, 'Category'] = None
             else:
