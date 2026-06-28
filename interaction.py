@@ -7,6 +7,7 @@ from transactions import (dig_into_category, show_biggest_oneoff_expenses,
                           review_extraordinary_spendings, set_budget,
                           add_adjustment_transaction, set_goals,
                           show_flagged_transactions, dig_into_category_group, search_transactions_by_keyword)
+from backup import run_backup
 
 def run_visualize_script(year, month):
     script_path = os.path.join(os.path.dirname(__file__), 'visualize-results.py')
@@ -83,6 +84,15 @@ def main():
         change_period = main_menu(db_name, year, month)
         if not change_period:
             break
+
+    # Best-effort backup on exit. Wrapped so a backup problem can never crash
+    # the program or interfere with a clean goodbye — your data is already safe
+    # in the canonical DB regardless.
+    print("Backing up database...")
+    try:
+        run_backup(db_name)
+    except Exception as e:
+        print(f"Backup did not run ({e}); your data in {db_name} is unaffected.")
 
     print("Thank you for using the budgeting tool. Goodbye!")
 
