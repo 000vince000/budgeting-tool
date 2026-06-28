@@ -1,0 +1,5 @@
+[tool.pytest.ini_options]
+# Put the repo root on sys.path so tests can import the app modules
+# (db_operations, transactions, helpers, ingest, interaction, ...).
+pythonpath = ["."]
+testpaths = ["tests"]
