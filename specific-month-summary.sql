@@ -17,24 +17,25 @@ monthly_sums AS (
     GROUP BY DATE_TRUNC('month', ct."Transaction Date"), c.category, c.category_group
 ),
 category_stats AS (
-    SELECT 
+    SELECT
         category,
         category_group,
-        ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ABS(monthly_total)), 2) AS p50_monthly_sum,
-        ROUND(PERCENTILE_CONT(0.85) WITHIN GROUP (ORDER BY ABS(monthly_total)), 2) AS p85_monthly_sum,
-        ROUND(AVG(ABS(monthly_total)), 2) AS avg_monthly_sum,
-        ROUND(STDDEV_POP(ABS(monthly_total)), 2) AS stddev_monthly_sum,
-        COUNT(*) FILTER (WHERE monthly_total != 0) AS months_with_spending
+        ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ABS(monthly_total)) FILTER (WHERE monthly_total < 0), 2) AS p50_monthly_sum,
+        ROUND(PERCENTILE_CONT(0.85) WITHIN GROUP (ORDER BY ABS(monthly_total)) FILTER (WHERE monthly_total < 0), 2) AS p85_monthly_sum,
+        ROUND(AVG(ABS(monthly_total)) FILTER (WHERE monthly_total < 0), 2) AS avg_monthly_sum,
+        ROUND(STDDEV_POP(ABS(monthly_total)) FILTER (WHERE monthly_total < 0), 2) AS stddev_monthly_sum,
+        COUNT(*) FILTER (WHERE monthly_total < 0) AS months_with_spending
     FROM monthly_sums
     GROUP BY category, category_group
 ),
 specified_month_sums AS (
-    SELECT 
+    SELECT
         c.category,
         c.category_group,
-        COALESCE(ABS(SUM(ct.amount)), 0) AS specified_month_sum
+        COALESCE(ABS(SUM(ct.amount)), 0) AS specified_month_sum,
+        COALESCE(SUM(ct.amount), 0) > 0 AS is_net_credit
     FROM category_list c
-    LEFT JOIN consolidated_transactions ct 
+    LEFT JOIN consolidated_transactions ct
         ON c.category = ct.category
         AND DATE_TRUNC('month', ct."Transaction Date") = (SELECT month FROM specified_month)
     GROUP BY c.category, c.category_group
@@ -54,6 +55,7 @@ SELECT
         ELSE ROUND((cs.stddev_monthly_sum / cs.avg_monthly_sum) * 100, 2)
     END AS avg_percent_variance,
     ROUND(COALESCE(sms.specified_month_sum, 0), 2) AS specified_month_sum,
+    COALESCE(sms.is_net_credit, FALSE) AS is_net_credit,
     cb.budget,
     CASE
         WHEN cb.budget IS NULL THEN ''

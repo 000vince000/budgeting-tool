@@ -333,8 +333,12 @@ def get_category_group_summary_with_percentiles(conn, year, month):
     group_stats AS (
         SELECT
             category_group,
-            ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ABS(monthly_total)), 2) AS p50,
-            ROUND(PERCENTILE_CONT(0.85) WITHIN GROUP (ORDER BY ABS(monthly_total)), 2) AS p85
+            ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ABS(monthly_total))
+                  FILTER (WHERE (category_group != 'Revenue' AND monthly_total < 0)
+                             OR (category_group  = 'Revenue' AND monthly_total > 0)), 2) AS p50,
+            ROUND(PERCENTILE_CONT(0.85) WITHIN GROUP (ORDER BY ABS(monthly_total))
+                  FILTER (WHERE (category_group != 'Revenue' AND monthly_total < 0)
+                             OR (category_group  = 'Revenue' AND monthly_total > 0)), 2) AS p85
         FROM monthly_group_totals
         GROUP BY 1
     ),
@@ -401,6 +405,7 @@ def get_p85_for_category(conn, category, year, month):
     FROM consolidated_transactions
     WHERE Category = ?
       AND DATE_TRUNC('month', "Transaction Date") != MAKE_DATE(?, ?, 1)
+      AND Amount < 0
     """
     return execute_scalar_query(conn, query, [category, year, month])
 
@@ -427,6 +432,7 @@ def get_p90_across_categories(conn, year, month, excluded_categories):
     FROM consolidated_transactions
     WHERE EXTRACT(YEAR FROM "Transaction Date") = ?
       AND EXTRACT(MONTH FROM "Transaction Date") = ?
+      AND Amount < 0
       {exclusion_clause}
     """
     return execute_scalar_query(conn, query, [year, month])

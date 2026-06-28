@@ -310,6 +310,37 @@ class TestCheckRecurringTransaction(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# get_p85_for_category — sign handling
+# ---------------------------------------------------------------------------
+
+class TestGetP85ForCategorySignHandling(unittest.TestCase):
+    """Verifies that positive refund transactions in the history don't inflate p85."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.conn = duckdb.connect(':memory:')
+        _create_schema(cls.conn)
+        cls.conn.execute("INSERT INTO categories VALUES ('Health', 'Non-discretionary')")
+
+        id_ = 1
+        # Three historical expense months (all excluded from target-month p85)
+        for iso, amt in [('2024-01-15', -100.0), ('2024-02-15', -200.0), ('2024-03-15', -300.0)]:
+            _insert_tx(cls.conn, id_, 'Chase', iso, 'DocVisit', 'Health', amount=amt); id_ += 1
+        # April: large insurance reimbursement — must NOT enter the p85 distribution
+        _insert_tx(cls.conn, id_, 'Chase', '2024-04-15', 'InsuranceReimb', 'Health', amount=500.0); id_ += 1
+        # Target month May (excluded from its own p85 by the query's date filter)
+        _insert_tx(cls.conn, id_, 'Chase', '2024-05-15', 'DocVisit', 'Health', amount=-150.0); id_ += 1
+
+    def test_positive_refund_excluded_from_p85(self):
+        # Expense history (Jan/Feb/Mar only — May is excluded as current month):
+        #   sorted [100, 200, 300], n=3
+        #   PERCENTILE_CONT(0.85): pos=0.85*2=1.7 → 200 + 0.7*(300-200) = 270.0
+        # If April's +500 were included: [100,200,300,500] → 300 + 0.55*200 = 410.0 ≠ 270.0
+        result = get_p85_for_category(self.conn, 'Health', 2024, 5)
+        self.assertAlmostEqual(float(result), 270.0)
+
+
+# ---------------------------------------------------------------------------
 # get_biggest_oneoff_expenses
 # ---------------------------------------------------------------------------
 
@@ -404,6 +435,70 @@ class TestGetMonthSummary(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# get_month_summary — is_net_credit flag and credit-month exclusion from stats
+# ---------------------------------------------------------------------------
+
+class TestGetMonthSummaryNetCredit(unittest.TestCase):
+    """
+    Verifies two things introduced together:
+      1. is_net_credit=True when the target month is a net credit (refunds > expenses).
+      2. Credit months in the history are excluded from p50/p85 to avoid inflating them.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.conn = duckdb.connect(':memory:')
+        _create_schema(cls.conn)
+        cls.conn.execute("""
+            CREATE OR REPLACE VIEW current_budgets AS
+            SELECT c.category, cb.budget, cb.timestamp
+            FROM categories c
+            LEFT JOIN (
+                SELECT category, budget, timestamp,
+                       ROW_NUMBER() OVER (PARTITION BY category ORDER BY timestamp DESC) AS rn
+                FROM category_budgets
+            ) cb ON c.category = cb.category AND cb.rn = 1
+        """)
+        cls.conn.execute("INSERT INTO categories VALUES ('Health', 'Non-discretionary')")
+        cls.conn.execute("INSERT INTO categories VALUES ('Groceries', 'Discretionary')")
+
+        id_ = 1
+        # Health: 3 expense months + 1 reimbursement (credit) month in history
+        for iso, amt in [('2024-01-15', -300.0), ('2024-02-15', -200.0), ('2024-03-15', -400.0)]:
+            _insert_tx(cls.conn, id_, 'Chase', iso, 'Doctor', 'Health', amount=amt); id_ += 1
+        # April: insurance reimbursement → net credit; must be excluded from expense stats
+        _insert_tx(cls.conn, id_, 'Chase', '2024-04-15', 'InsuranceReimb', 'Health', amount=500.0); id_ += 1
+        # Target month May: normal expense
+        _insert_tx(cls.conn, id_, 'Chase', '2024-05-15', 'Doctor', 'Health', amount=-350.0); id_ += 1
+
+        # Groceries in May: refund > expense → net credit target month
+        _insert_tx(cls.conn, id_, 'Chase', '2024-05-10', 'GrocRefund', 'Groceries', amount=200.0); id_ += 1
+        _insert_tx(cls.conn, id_, 'Chase', '2024-05-20', 'GrocStore',  'Groceries', amount=-50.0); id_ += 1
+
+    def _row(self, category):
+        return get_month_summary(self.conn, 2024, 5)[
+            lambda df: df['category'] == category
+        ].iloc[0]
+
+    def test_is_net_credit_false_for_expense_month(self):
+        self.assertFalse(bool(self._row('Health')['is_net_credit']))
+
+    def test_is_net_credit_true_when_refunds_exceed_expenses(self):
+        self.assertTrue(bool(self._row('Groceries')['is_net_credit']))
+
+    def test_credit_month_excluded_from_p50(self):
+        # Health expense months only: Jan 300, Feb 200, Mar 400, May 350 → sorted [200,300,350,400]
+        # PERCENTILE_CONT(0.5): pos=1.5 → 300 + 0.5*(350-300) = 325.0
+        # If April's +500 were included the distribution would be skewed higher.
+        self.assertAlmostEqual(float(self._row('Health')['p50_monthly_sum']), 325.0)
+
+    def test_credit_month_excluded_from_p85(self):
+        # Expense months sorted [200, 300, 350, 400]
+        # PERCENTILE_CONT(0.85): pos=2.55 → 350 + 0.55*(400-350) = 377.5
+        self.assertAlmostEqual(float(self._row('Health')['p85_monthly_sum']), 377.5)
+
+
+# ---------------------------------------------------------------------------
 # get_transactions_above_threshold
 # ---------------------------------------------------------------------------
 
@@ -449,28 +544,37 @@ class TestGetP90AcrossCategories(unittest.TestCase):
         cls.conn = duckdb.connect(':memory:')
         _create_schema(cls.conn)
         cls.conn.execute("INSERT INTO categories VALUES ('Dining', 'Discretionary')")
-        cls.conn.execute("INSERT INTO categories VALUES ('Salary', 'Revenue')")
-        # Five Dining transactions: [10, 20, 30, 40, 50]
+        cls.conn.execute("INSERT INTO categories VALUES ('FixedCosts', 'Non-discretionary')")
+        # Five Dining expense transactions: amounts [10, 20, 30, 40, 50]
         for i, amount in enumerate([-10.0, -20.0, -30.0, -40.0, -50.0], start=1):
             _insert_tx(cls.conn, i, 'Chase', '2024-01-10', f'Vendor{i}', 'Dining', amount=amount)
-        # Large Salary transaction — excluded in most tests
-        _insert_tx(cls.conn, 6, 'Chase', '2024-01-15', 'Employer', 'Salary', amount=5000.0)
+        # Large negative in FixedCosts — excluded in category-exclusion tests
+        _insert_tx(cls.conn, 6, 'Chase', '2024-01-15', 'BigBill', 'FixedCosts', amount=-5000.0)
+        # Positive refund in Dining — must never enter p90 regardless of exclusion list
+        _insert_tx(cls.conn, 7, 'Chase', '2024-01-20', 'DiningRefund', 'Dining', amount=800.0)
 
     def test_p90_value(self):
-        # PERCENTILE_CONT(0.90) on [10,20,30,40,50]: 0.9*(5-1)=3.6 → 40 + 0.6*10 = 46
-        result = get_p90_across_categories(self.conn, 2024, 1, ['Salary'])
+        # PERCENTILE_CONT(0.90) on Dining only [10,20,30,40,50]: 0.9*(5-1)=3.6 → 40 + 0.6*10 = 46
+        result = get_p90_across_categories(self.conn, 2024, 1, ['FixedCosts'])
         self.assertAlmostEqual(float(result), 46.0)
 
     def test_excluded_categories_not_counted(self):
-        # Salary (5000) would dominate if included; excluding it gives a much lower P90
-        excl = get_p90_across_categories(self.conn, 2024, 1, ['Salary'])
+        # FixedCosts (-5000) dominates when included; excluding it gives a much lower P90
+        excl = get_p90_across_categories(self.conn, 2024, 1, ['FixedCosts'])
         incl = get_p90_across_categories(self.conn, 2024, 1, [])
         self.assertLess(float(excl), float(incl))
 
-    def test_empty_exclusion_list_includes_all(self):
+    def test_empty_exclusion_list_includes_all_negative_amounts(self):
+        # With FixedCosts (-5000) included, P90 is well above 50
         result = get_p90_across_categories(self.conn, 2024, 1, [])
-        # With Salary (5000) included, P90 should be well above 50
         self.assertGreater(float(result), 50.0)
+
+    def test_positive_refund_excluded_from_p90(self):
+        # DiningRefund (+800) must not enter the distribution even with an empty exclusion list.
+        # Only the 5 Dining negatives count → p90 = 46.0.
+        # If +800 were included: sorted [10,20,30,40,50,800] n=6, pos=4.5 → 50+0.5*750 = 425 ≠ 46.
+        result = get_p90_across_categories(self.conn, 2024, 1, ['FixedCosts'])
+        self.assertAlmostEqual(float(result), 46.0)
 
 
 # ---------------------------------------------------------------------------
@@ -722,6 +826,48 @@ class TestGetCategoryGroupSummaryWithPercentiles(unittest.TestCase):
     def test_no_null_values(self):
         df = get_category_group_summary_with_percentiles(self.conn, 2024, 4)
         self.assertFalse(df[['subtotal', 'p50', 'p85']].isnull().any().any())
+
+
+# ---------------------------------------------------------------------------
+# get_category_group_summary_with_percentiles — credit-month exclusion
+# ---------------------------------------------------------------------------
+
+class TestGetCategoryGroupSummaryExcludesCreditMonths(unittest.TestCase):
+    """
+    Verifies that a reimbursement month (net positive) in an expense group's
+    history does not inflate that group's p50/p85 benchmarks.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.conn = duckdb.connect(':memory:')
+        _create_schema(cls.conn)
+        cls.conn.execute("INSERT INTO categories VALUES ('Doctor', 'Non-discretionary')")
+
+        id_ = 1
+        # 3 expense months: -300, -200, -400
+        for iso, amt in [('2024-01-15', -300.0), ('2024-02-15', -200.0), ('2024-03-15', -400.0)]:
+            _insert_tx(cls.conn, id_, 'Chase', iso, 'DocVisit', 'Doctor', amount=amt); id_ += 1
+        # April: net credit (insurance reimbursement) — must NOT enter expense percentiles
+        _insert_tx(cls.conn, id_, 'Chase', '2024-04-15', 'InsuranceReimb', 'Doctor', amount=500.0); id_ += 1
+        # Target month May: normal expense
+        _insert_tx(cls.conn, id_, 'Chase', '2024-05-15', 'DocVisit', 'Doctor', amount=-350.0); id_ += 1
+
+    def _row(self):
+        df = get_category_group_summary_with_percentiles(self.conn, 2024, 5)
+        return df[df['category_group'] == 'Non-discretionary'].iloc[0]
+
+    def test_credit_month_excluded_from_group_p50(self):
+        # Expense months only: [300, 200, 400, 350] → sorted [200, 300, 350, 400]
+        # PERCENTILE_CONT(0.5): pos=1.5 → 300 + 0.5*(350-300) = 325.0
+        self.assertAlmostEqual(float(self._row()['p50']), 325.0)
+
+    def test_credit_month_excluded_from_group_p85(self):
+        # PERCENTILE_CONT(0.85): pos=2.55 → 350 + 0.55*(400-350) = 377.5
+        self.assertAlmostEqual(float(self._row()['p85']), 377.5)
+
+    def test_subtotal_is_current_month_expense(self):
+        self.assertAlmostEqual(float(self._row()['subtotal']), -350.0)
 
 
 if __name__ == '__main__':

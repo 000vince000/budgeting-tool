@@ -110,11 +110,17 @@ def display_cli_spending_table(df, month_name, year):
     table.add_column("Budget Status", no_wrap=True)
 
     for _, row in df.iterrows():
-        color = _spending_color(row['specified_month_sum'], row['p50_monthly_sum'], row['p85_monthly_sum'])
+        is_credit = bool(row.get('is_net_credit', False))
+        if is_credit:
+            color = "bright_green"
+            amount_str = f"[{color}]+${row['specified_month_sum']:,.0f}[/{color}]"
+        else:
+            color = _spending_color(row['specified_month_sum'], row['p50_monthly_sum'], row['p85_monthly_sum'])
+            amount_str = f"[{color}]${row['specified_month_sum']:,.0f}[/{color}]"
         table.add_row(
             row['category'],
             make_bar(row['specified_month_sum'], color),
-            f"[{color}]${row['specified_month_sum']:,.0f}[/{color}]",
+            amount_str,
             f"${row['p50_monthly_sum']:,.0f}",
             f"${row['p85_monthly_sum']:,.0f}",
             budget_style(row['budget_status']),
@@ -186,13 +192,22 @@ def calculate_net_income(conn, year, month):
                     f"${p85:,.2f}",
                 )
             else:
-                color = _spending_color(abs(subtotal), p50, p85)
-                table.add_row(
-                    label,
-                    f"[{color}]-${abs(subtotal):,.2f}[/{color}]",
-                    f"-${p50:,.2f}",
-                    f"-${p85:,.2f}",
-                )
+                if subtotal > 0:
+                    color = "bright_green"
+                    table.add_row(
+                        label,
+                        f"[{color}]+${subtotal:,.2f}[/{color}]",
+                        f"-${p50:,.2f}",
+                        f"-${p85:,.2f}",
+                    )
+                else:
+                    color = _spending_color(abs(subtotal), p50, p85)
+                    table.add_row(
+                        label,
+                        f"[{color}]-${abs(subtotal):,.2f}[/{color}]",
+                        f"-${p50:,.2f}",
+                        f"-${p85:,.2f}",
+                    )
         else:
             table.add_row(label, "[dim]$0.00[/dim]", "—", "—")
 
