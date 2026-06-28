@@ -21,7 +21,7 @@ python create_schema.py
 python populate-seeddata-into-duckdb.py
 
 # Run unit tests
-python -m unittest test_transactions.py
+python -m pytest tests/
 ```
 
 ## Architecture

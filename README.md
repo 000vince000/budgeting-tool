@@ -23,7 +23,7 @@ python interaction.py
 python ingest.py
 
 # Run tests
-python -m unittest test_transactions.py
+python -m pytest tests/
 ```
 
 ## Menu Features
