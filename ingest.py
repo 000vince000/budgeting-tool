@@ -11,8 +11,12 @@ from db_operations import (
     get_vendor_mapping_from_db,
     get_global_categories_from_db,
     persist_data_in_db,
-    get_db_connection
+    get_db_connection,
+    insert_category,
+    insert_category_matching_pattern,
 )
+
+CATEGORY_GROUPS = ["Revenue", "Cost of revenue", "Non-discretionary", "Discretionary", "Misc"]
 
 input_lock = threading.Lock()
 
@@ -50,8 +54,42 @@ def currency_to_float(x):
         return 0.0
     return float(str(x).replace('$', '').replace(',', ''))
 
+def _maybe_save_match_rule(conn, description, category, category_map, unique_categories, is_new):
+    """Offer to persist a keyword substring rule for a just-categorized vendor.
+
+    Writes to category_matching_patterns so future imports auto-match this vendor
+    (the substring matcher in apply_category_mapping/get_category) and injects the
+    rule into the in-memory category_map so it also applies to the rest of this run.
+    Skipped for EXCLUDE and when no DB connection is available (e.g. unit tests).
+    A brand-new category is recorded in `categories` first to satisfy the FK.
+    """
+    if conn is None or category == "EXCLUDE":
+        return
+
+    raw = input(f"Save match rule? keyword [{description}] (Enter=accept, -=skip): ").strip()
+    if raw == "-":
+        return
+    keyword = raw if raw else description
+    if len(keyword) < 3:
+        print("  Keyword too short — skipped (avoids over-matching).")
+        return
+
+    try:
+        if is_new or category not in unique_categories:
+            group = input(f"  New category '{category}' — group {CATEGORY_GROUPS} [default Misc]: ").strip()
+            if group not in CATEGORY_GROUPS:
+                group = "Misc"
+            insert_category(conn, category, group)
+            if category not in unique_categories:
+                unique_categories.append(category)
+        insert_category_matching_pattern(conn, keyword, category)
+        conn.commit()
+        category_map[keyword] = category  # apply for the remainder of this run
+    except Exception as e:
+        print(f"  Could not save match rule: {e}")
+
 # this function prompts user for choice of category
-def get_category(description, category_map, unique_categories, user_choices):
+def get_category(description, category_map, unique_categories, user_choices, conn=None):
     for key, value in category_map.items():
         if key.lower() in description.lower():
             return value, False  # False indicates no user intervention
@@ -79,10 +117,14 @@ def get_category(description, category_map, unique_categories, user_choices):
                 if 1 <= choice <= len(sorted_categories):
                     selected_category = sorted_categories[choice - 1]
                     user_choices[description] = selected_category
+                    _maybe_save_match_rule(conn, description, selected_category,
+                                           category_map, unique_categories, is_new=False)
                     return selected_category, True  # True indicates user intervention
                 elif choice == len(sorted_categories) + 1:
-                    new_category = input("Enter the new category: ")
+                    new_category = input("Enter the new category: ").strip()
                     user_choices[description] = new_category
+                    _maybe_save_match_rule(conn, description, new_category,
+                                           category_map, unique_categories, is_new=True)
                     return new_category, True  # True indicates user intervention
                 else:
                     print("Invalid choice. Please try again.")
@@ -97,7 +139,7 @@ def apply_category_mapping(description, vendor_map, keyword_map):
             return value
     return None
 
-def process_chase_csv(input_file, global_categories, user_choices, vendor_map, category_map):
+def process_chase_csv(input_file, global_categories, user_choices, vendor_map, category_map, conn=None):
     try:
         df = pd.read_csv(input_file)
     except Exception as e:
@@ -116,7 +158,7 @@ def process_chase_csv(input_file, global_categories, user_choices, vendor_map, c
             df.at[index, 'Category'] = mapped_category
             df.at[index, 'Memo'] += f' auto; was: {old_category}'
         elif pd.isna(row['Category']) or row['Category'] in ["Bills & Utilities", "Professional Services", "Personal", ""]:
-            category, user_intervened = get_category(row['Description'], category_map, global_categories, user_choices)
+            category, user_intervened = get_category(row['Description'], category_map, global_categories, user_choices, conn)
             if category == "EXCLUDE":
                 df.at[index, 'Category'] = None
             else:
@@ -126,7 +168,7 @@ def process_chase_csv(input_file, global_categories, user_choices, vendor_map, c
 
     return df[['Card', 'Transaction Date', 'Description', 'Category', 'Type', 'Amount', 'Memo']]
 
-def process_schwab_csv(input_file, global_categories, user_choices, vendor_map, category_map):
+def process_schwab_csv(input_file, global_categories, user_choices, vendor_map, category_map, conn=None):
     usecols = ['Date', 'Description', 'Type', 'Withdrawal', 'Deposit']
     try:
         df = pd.read_csv(input_file, usecols=usecols)
@@ -152,7 +194,7 @@ def process_schwab_csv(input_file, global_categories, user_choices, vendor_map, 
             df.at[index, 'Category'] = mapped_category
             df.at[index, 'Memo'] += ' auto'
         else:
-            category, user_intervened = get_category(row['Description'], category_map, global_categories, user_choices)
+            category, user_intervened = get_category(row['Description'], category_map, global_categories, user_choices, conn)
             if category == "EXCLUDE":
                 df.at[index, 'Category'] = None
             else:
@@ -237,7 +279,7 @@ def auto_import_from_downloads(conn, global_categories, user_choices, vendor_map
     combined_df = pd.DataFrame()
     imported_files = []
     for full, name, bank in recognized:
-        df = processors[bank](full, global_categories, user_choices, vendor_map, category_map)
+        df = processors[bank](full, global_categories, user_choices, vendor_map, category_map, conn)
         if df is None:
             print(f"  ! Parse error, left in place: {name}")
             continue
@@ -258,9 +300,9 @@ def auto_import_from_downloads(conn, global_categories, user_choices, vendor_map
     print(f"Done. Imported {len(imported_files)} file(s); archived to {archive_dir}.")
 
 
-def process_files_parallel(input_files, process_func, global_categories, user_choices, vendor_map, category_map):
+def process_files_parallel(input_files, process_func, global_categories, user_choices, vendor_map, category_map, conn=None):
     with concurrent.futures.ThreadPoolExecutor() as executor:
-        processed_dfs = list(executor.map(lambda f: process_func(f, global_categories, user_choices, vendor_map, category_map), input_files))
+        processed_dfs = list(executor.map(lambda f: process_func(f, global_categories, user_choices, vendor_map, category_map, conn), input_files))
 
     processed_dfs = [df for df in processed_dfs if df is not None and not df.empty]
     return pd.concat(processed_dfs, ignore_index=True) if processed_dfs else None
@@ -296,12 +338,12 @@ def main():
     combined_df = pd.DataFrame()
 
     if chase_files:
-        chase_df = process_files_parallel(chase_files, process_chase_csv, global_categories, user_choices, vendor_map, category_map)
+        chase_df = process_files_parallel(chase_files, process_chase_csv, global_categories, user_choices, vendor_map, category_map, conn)
         if chase_df is not None:
             combined_df = pd.concat([combined_df, chase_df], ignore_index=True)
 
     if schwab_files:
-        schwab_df = process_files_parallel(schwab_files, process_schwab_csv, global_categories, user_choices, vendor_map, category_map)
+        schwab_df = process_files_parallel(schwab_files, process_schwab_csv, global_categories, user_choices, vendor_map, category_map, conn)
         if schwab_df is not None:
             combined_df = pd.concat([combined_df, schwab_df], ignore_index=True)
 

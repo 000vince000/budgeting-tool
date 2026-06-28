@@ -220,6 +220,36 @@ def insert_vendor_category_mapping(conn, vendor, category):
     execute_query(conn, insert_query, [vendor, category])
     print(f"Vendor '{vendor}' successfully mapped to category '{category}'")
 
+def insert_category(conn, category, category_group):
+    """Insert (or update the group of) a category. Needed before a pattern or
+    vendor mapping can reference a brand-new category (FK to categories)."""
+    insert_query = """
+    INSERT INTO categories (category, category_group)
+    VALUES (?, ?)
+    ON CONFLICT (category) DO UPDATE SET category_group = EXCLUDED.category_group
+    """
+    execute_query(conn, insert_query, [category, category_group])
+    print(f"Category '{category}' recorded under group '{category_group}'")
+
+def insert_category_matching_pattern(conn, keyword, category):
+    """Upsert a keyword -> category substring rule into category_matching_patterns.
+
+    The category must already exist in the categories table (enforced here and by
+    the table's foreign key). Re-saving an existing keyword updates its category.
+    """
+    category_check_query = "SELECT COUNT(*) FROM categories WHERE category = ?"
+    result = execute_query(conn, category_check_query, [category]).fetchone()
+    if result[0] == 0:
+        raise ValueError(f"Category '{category}' does not exist in the categories table.")
+
+    insert_query = """
+    INSERT INTO category_matching_patterns (keyword, category)
+    VALUES (?, ?)
+    ON CONFLICT (keyword) DO UPDATE SET category = EXCLUDED.category
+    """
+    execute_query(conn, insert_query, [keyword, category])
+    print(f"Match rule saved: '{keyword}' -> '{category}'")
+
 def delete_vendor_category_mapping(conn, vendor):
     query = """
     DELETE FROM vendor_category_mapping
