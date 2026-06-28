@@ -160,10 +160,14 @@ def _open_file(path):
         print(f"Couldn't auto-open the image ({e}). It's saved at: {path}")
 
 
+GRAPHS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'graphs')
+
+
 def open_graph(df, month_name, year):
-    output_file = f'spending_comparison_{month_name}_{year}.png'
+    os.makedirs(GRAPHS_DIR, exist_ok=True)
+    output_file = os.path.join(GRAPHS_DIR, f'spending_comparison_{month_name}_{year}.png')
     create_plot(df)
-    temp_file = 'temp_plot.png'
+    temp_file = os.path.join(GRAPHS_DIR, 'temp_plot.png')
     plt.savefig(temp_file, dpi=300, bbox_inches='tight')
     new_hash = get_file_hash(temp_file)
     if os.path.exists(output_file):
