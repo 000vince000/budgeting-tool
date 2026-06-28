@@ -12,7 +12,6 @@ from db_operations import (
     persist_data_in_db,
     get_db_connection
 )
-from ingest_api import ingest_from_chase_plaid
 
 input_lock = threading.Lock()
 
@@ -182,7 +181,6 @@ def main():
         bank_choice = _select_from_list("Select import source:", [
             "Chase (CSV)",
             "Charles Schwab (CSV)",
-            "Fetch from Chase (Plaid)",
             "Done",
         ])
         if bank_choice == "Done":
@@ -191,8 +189,6 @@ def main():
             chase_files.extend(get_input_files("Chase"))
         elif bank_choice == "Charles Schwab (CSV)":
             schwab_files.extend(get_input_files("Charles Schwab"))
-        elif bank_choice == "Fetch from Chase (Plaid)":
-            ingest_from_chase_plaid(conn, global_categories, user_choices, vendor_map, category_map)
 
     combined_df = pd.DataFrame()
 
