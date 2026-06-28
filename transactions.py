@@ -1,7 +1,7 @@
 from datetime import date, datetime
 import duckdb
 import db_operations
-from helpers import print_divider, print_dataframe, get_user_input, get_user_choice, print_numbered_list
+from helpers import print_divider, print_dataframe, get_user_input, get_user_choice, print_numbered_list, sort_categories
 from collections import defaultdict
 from dateutil.relativedelta import relativedelta
 from decimal import Decimal
@@ -10,7 +10,7 @@ def dig_into_category(db_name, year, month):
     # Connections are opened only around DB work and closed before the next prompt,
     # so the database lock is released while the user browses/decides at a prompt.
     with duckdb.connect(db_name) as conn:
-        categories = sorted(db_operations.get_global_categories_from_db(conn))
+        categories = sort_categories(db_operations.get_global_categories_from_db(conn))
 
     while True:
         print("\nCategories:")
@@ -168,7 +168,7 @@ def review_extraordinary_spendings(conn, year, month):
     df_sorted = df.sort_values('difference', ascending=False)
 
     # Exclude specified categories
-    excluded_categories = ['Rental income', 'Salary', 'Monthly fixed cost', 'Monthly property expense']
+    excluded_categories = ['Business revenue', 'Rental income', 'Salary', 'Monthly fixed cost', 'Monthly property expense']
     df_sorted = df_sorted[~df_sorted['category'].isin(excluded_categories)]
     
     # Step 3-5: Fetch transactions and store in memory
@@ -232,7 +232,7 @@ def review_extraordinary_spendings(conn, year, month):
         print("No extraordinary non-recurring transactions found for this month.")
 
 def set_budget(conn):
-    categories = sorted(db_operations.get_global_categories_from_db(conn))
+    categories = sort_categories(db_operations.get_global_categories_from_db(conn))
     
     while True:
         print("\nCategories:")
@@ -262,7 +262,7 @@ def add_adjustment_transaction(conn, year, month):
     transaction_date = f"{year}-{month:02d}-01"
     description = input("Enter transaction description: ")
     amount = get_user_input("Enter amount (negative for expense, positive for income): ", float)
-    categories = sorted(db_operations.get_global_categories_from_db(conn))
+    categories = sort_categories(db_operations.get_global_categories_from_db(conn))
     print("\nCategories:")
     for i, category in enumerate(categories, 1):
         print(f"{i}. {category}")
@@ -299,7 +299,7 @@ def set_goals(conn):
 def get_goal_breakdown_from_user(conn):
     breakdown = {}
     remaining_percentage = 100
-    categories = ['Investment', 'Savings'] + sorted(db_operations.get_global_categories_from_db(conn))
+    categories = ['Investment', 'Savings'] + sort_categories(db_operations.get_global_categories_from_db(conn))
 
     # Ask for Investment and Savings first
     for category in ['Investment', 'Savings']:

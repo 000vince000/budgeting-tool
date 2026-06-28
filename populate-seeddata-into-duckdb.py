@@ -88,6 +88,7 @@ global_category_list = {
     'Monthly property expense':"Cost of revenue",
     'Rental income':"Revenue",
     'Salary':"Revenue",
+    'Business revenue':"Revenue",
     'Shopping':"Discretionary",
     'Transportation':"Non-discretionary",
     'Travel':"Discretionary",

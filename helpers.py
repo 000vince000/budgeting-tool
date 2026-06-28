@@ -93,6 +93,20 @@ def get_user_specified_date():
 
         return year, month
 
+# Categories that should sort immediately after another specific category rather than
+# in strict alphabetical order. Key = category to reposition, value = category it follows.
+_SORT_AFTER = {
+    'Business revenue': 'Salary',
+}
+
+def sort_categories(categories):
+    def _key(cat):
+        after = _SORT_AFTER.get(cat)
+        if after:
+            return (after.lower(), '\xff')
+        return (cat.lower(), '')
+    return sorted(categories, key=_key)
+
 def validate_date(date_string):
     try:
         datetime.strptime(date_string, '%Y-%m-%d')

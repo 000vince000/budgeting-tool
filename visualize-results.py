@@ -342,7 +342,7 @@ def main(year, month):
     6. Creates a bar plot comparing specified month sum with P50 and P85 markers for each category.
     7. Saves the plot as an image file and opens it in the default web browser.
 
-    The function excludes income categories (Salary and Rental income) from the visualization
+    The function excludes income categories (Business revenue, Salary, Rental income) from the visualization
     to focus on expense categories.
 
     Args:
