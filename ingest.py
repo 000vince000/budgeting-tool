@@ -1,6 +1,7 @@
 import pandas as pd
 import sys
 import os
+import shutil
 from collections import defaultdict
 import concurrent.futures
 import threading
@@ -14,6 +15,9 @@ from db_operations import (
 )
 
 input_lock = threading.Lock()
+
+# Folder where bank CSV exports land. Override with BUDGET_DOWNLOADS_DIR if needed.
+DOWNLOADS_DIR = os.environ.get("BUDGET_DOWNLOADS_DIR", "/mnt/c/Users/00vin/Downloads")
 
 def _select_from_list(prompt, options):
     while True:
@@ -158,6 +162,102 @@ def process_schwab_csv(input_file, global_categories, user_choices, vendor_map, 
 
     return df[['Card', 'Transaction Date', 'Description', 'Category', 'Type', 'Amount', 'Memo']]
 
+def detect_bank_from_header(filepath):
+    """Classify a CSV as 'chase', 'schwab', or None by reading its header row.
+
+    Schwab exports carry a 'RunningBalance' column; Chase exports carry a
+    'Post Date' column. Anything else is unrecognized and skipped.
+    """
+    try:
+        with open(filepath, "r", newline="") as f:
+            header = f.readline()
+    except Exception:
+        return None
+    cols = [c.strip().strip('"') for c in header.split(",")]
+    if "RunningBalance" in cols:
+        return "schwab"
+    if "Post Date" in cols:
+        return "chase"
+    return None
+
+
+def _archive_file(filepath, archive_dir):
+    """Move an imported file into archive_dir, avoiding name collisions."""
+    os.makedirs(archive_dir, exist_ok=True)
+    base = os.path.basename(filepath)
+    dest = os.path.join(archive_dir, base)
+    if os.path.exists(dest):
+        root, ext = os.path.splitext(base)
+        i = 1
+        while os.path.exists(dest):
+            dest = os.path.join(archive_dir, f"{root}_{i}{ext}")
+            i += 1
+    shutil.move(filepath, dest)
+    return dest
+
+
+def auto_import_from_downloads(conn, global_categories, user_choices, vendor_map, category_map):
+    """Scan DOWNLOADS_DIR, auto-classify Chase/Schwab CSVs, import, then archive.
+
+    Only top-level files are considered (the imported/ archive is skipped). Files
+    that parse successfully are moved to DOWNLOADS_DIR/imported/ so the next run
+    only sees genuinely new exports; a file that fails to parse is left in place.
+    """
+    if not os.path.isdir(DOWNLOADS_DIR):
+        print(f"Downloads folder not found: {DOWNLOADS_DIR}")
+        print("Set BUDGET_DOWNLOADS_DIR to point at your exports folder.")
+        return
+
+    archive_dir = os.path.join(DOWNLOADS_DIR, "imported")
+    recognized, skipped = [], []
+    for name in sorted(os.listdir(DOWNLOADS_DIR)):
+        full = os.path.join(DOWNLOADS_DIR, name)
+        if not os.path.isfile(full) or not name.lower().endswith(".csv"):
+            continue
+        bank = detect_bank_from_header(full)
+        (recognized if bank else skipped).append((full, name, bank))
+
+    if not recognized:
+        print(f"No new Chase or Schwab CSVs found in {DOWNLOADS_DIR}.")
+        if skipped:
+            print("Ignored (unrecognized): " + ", ".join(n for _, n, _ in skipped))
+        return
+
+    print(f"\nFound {len(recognized)} bank CSV(s) in {DOWNLOADS_DIR}:")
+    for _, name, bank in recognized:
+        print(f"  {bank.capitalize():7} <- {name}")
+    if skipped:
+        print("Ignoring (unrecognized): " + ", ".join(n for _, n, _ in skipped))
+
+    if input("\nImport these? [Enter=yes, q=cancel]: ").strip().lower() == "q":
+        print("Cancelled.")
+        return
+
+    processors = {"chase": process_chase_csv, "schwab": process_schwab_csv}
+    combined_df = pd.DataFrame()
+    imported_files = []
+    for full, name, bank in recognized:
+        df = processors[bank](full, global_categories, user_choices, vendor_map, category_map)
+        if df is None:
+            print(f"  ! Parse error, left in place: {name}")
+            continue
+        combined_df = pd.concat([combined_df, df], ignore_index=True)
+        imported_files.append(full)
+
+    if combined_df.empty:
+        print("Nothing to import after processing.")
+        return
+
+    persist_data_in_db(conn, combined_df, "consolidated_transactions")
+    # Commit before archiving so we never move a source file for unsaved data.
+    conn.commit()
+
+    for full in imported_files:
+        dest = _archive_file(full, archive_dir)
+        print(f"  archived -> imported/{os.path.basename(dest)}")
+    print(f"Done. Imported {len(imported_files)} file(s); archived to {archive_dir}.")
+
+
 def process_files_parallel(input_files, process_func, global_categories, user_choices, vendor_map, category_map):
     with concurrent.futures.ThreadPoolExecutor() as executor:
         processed_dfs = list(executor.map(lambda f: process_func(f, global_categories, user_choices, vendor_map, category_map), input_files))
@@ -179,12 +279,15 @@ def main():
 
     while True:
         bank_choice = _select_from_list("Select import source:", [
+            "Auto-import new CSVs from Downloads",
             "Chase (CSV)",
             "Charles Schwab (CSV)",
             "Done",
         ])
         if bank_choice == "Done":
             break
+        elif bank_choice == "Auto-import new CSVs from Downloads":
+            auto_import_from_downloads(conn, global_categories, user_choices, vendor_map, category_map)
         elif bank_choice == "Chase (CSV)":
             chase_files.extend(get_input_files("Chase"))
         elif bank_choice == "Charles Schwab (CSV)":
