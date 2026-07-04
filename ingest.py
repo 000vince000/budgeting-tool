@@ -16,6 +16,7 @@ from db_operations import (
     insert_category_matching_pattern,
     get_category_history,
 )
+from helpers import sort_categories
 
 CATEGORY_GROUPS = ["Revenue", "Cost of revenue", "Non-discretionary", "Discretionary", "Misc"]
 
@@ -156,8 +157,9 @@ def get_category(description, category_map, unique_categories, user_choices, con
 
         print("Choose a category or enter a new one:")
 
-        # Sort categories alphabetically, excluding "EXCLUDE"
-        sorted_categories = sorted([cat for cat in unique_categories if cat != "EXCLUDE"])
+        # Sort categories (alphabetical, but with _SORT_AFTER pins like Business
+        # revenue → after Salary), excluding "EXCLUDE"
+        sorted_categories = sort_categories([cat for cat in unique_categories if cat != "EXCLUDE"])
 
         # Add "EXCLUDE" option at the end
         sorted_categories.append("EXCLUDE")
