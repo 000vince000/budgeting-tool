@@ -68,7 +68,7 @@ def _maybe_save_match_rule(conn, description, category, category_map, unique_cat
     if conn is None or category == "EXCLUDE":
         return
 
-    raw = input(f"Save match rule? keyword [{description}] (Enter=accept, -=skip): ").strip()
+    raw = input(f"Save match rule. Match keyword (Enter=full '{description}', type a shorter one, -=skip): ").strip()
     if raw == "-":
         return
     keyword = raw if raw else description
@@ -132,12 +132,13 @@ def _history_suggestion(conn, description, amount, txn_type):
         return None, None
 
     label = f"'{description}'" if source == "description" else f"{_fmt_amount(amount)} {txn_type}"
+    prefix = "No vendor-name match — but " if source == "amount" else ""
     if len(primary) == 1:
         cat, cnt = primary[0]
-        print(f"  \U0001F4A1 {label} seen {cnt}x before, all '{cat}'.")
+        print(f"  \U0001F4A1 {prefix}{label} seen {cnt}x before, all '{cat}'.")
         return cat, source
     breakdown = ", ".join(f"{c} x{n}" for c, n in primary)
-    print(f"  ⚠ {label} is split: {breakdown} — consider cleaning this up later in the app.")
+    print(f"  ⚠ {prefix}{label} is split: {breakdown} — consider cleaning this up later in the app.")
     return None, source
 
 # this function prompts user for choice of category
