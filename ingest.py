@@ -330,7 +330,7 @@ def auto_import_from_downloads(conn, global_categories, user_choices, vendor_map
     if not os.path.isdir(DOWNLOADS_DIR):
         print(f"Downloads folder not found: {DOWNLOADS_DIR}")
         print("Set BUDGET_DOWNLOADS_DIR to point at your exports folder.")
-        return
+        return 0
 
     archive_dir = os.path.join(DOWNLOADS_DIR, "imported")
     recognized, skipped = [], []
@@ -345,7 +345,7 @@ def auto_import_from_downloads(conn, global_categories, user_choices, vendor_map
         print(f"No new Chase or Schwab CSVs found in {DOWNLOADS_DIR}.")
         if skipped:
             print("Ignored (unrecognized): " + ", ".join(n for _, n, _ in skipped))
-        return
+        return 0
 
     print(f"\nFound {len(recognized)} bank CSV(s) in {DOWNLOADS_DIR}:")
     for _, name, bank in recognized:
@@ -355,7 +355,7 @@ def auto_import_from_downloads(conn, global_categories, user_choices, vendor_map
 
     if input("\nImport these? [Enter=yes, q=cancel]: ").strip().lower() == "q":
         print("Cancelled.")
-        return
+        return 0
 
     processors = {"chase": process_chase_csv, "schwab": process_schwab_csv}
     combined_df = pd.DataFrame()
@@ -370,7 +370,7 @@ def auto_import_from_downloads(conn, global_categories, user_choices, vendor_map
 
     if combined_df.empty:
         print("Nothing to import after processing.")
-        return
+        return 0
 
     persist_data_in_db(conn, combined_df, "consolidated_transactions")
     # Commit before archiving so we never move a source file for unsaved data.
@@ -380,6 +380,7 @@ def auto_import_from_downloads(conn, global_categories, user_choices, vendor_map
         dest = _archive_file(full, archive_dir)
         print(f"  archived -> imported/{os.path.basename(dest)}")
     print(f"Done. Imported {len(imported_files)} file(s); archived to {archive_dir}.")
+    return len(imported_files)
 
 
 def process_files_parallel(input_files, process_func, global_categories, user_choices, vendor_map, category_map, conn=None):
@@ -400,6 +401,7 @@ def main():
     user_choices = {}
     chase_files = []
     schwab_files = []
+    auto_imported = 0
 
     while True:
         bank_choice = _select_from_list("Select import source:", [
@@ -411,7 +413,7 @@ def main():
         if bank_choice == "Done":
             break
         elif bank_choice == "Auto-import new CSVs from Downloads":
-            auto_import_from_downloads(conn, global_categories, user_choices, vendor_map, category_map)
+            auto_imported += auto_import_from_downloads(conn, global_categories, user_choices, vendor_map, category_map)
         elif bank_choice == "Chase (CSV)":
             chase_files.extend(get_input_files("Chase"))
         elif bank_choice == "Charles Schwab (CSV)":
@@ -431,7 +433,7 @@ def main():
 
     if not combined_df.empty:
         persist_data_in_db(conn, combined_df, table_name)
-    else:
+    elif auto_imported == 0:
         print("Error: No data to save. Please check your input files and try again.")
 
     conn.close()
